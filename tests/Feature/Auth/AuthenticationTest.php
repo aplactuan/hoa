@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\RoleName;
 use App\Models\User;
+use Database\Seeders\AccessSeeder;
 use Laravel\Fortify\Features;
 
 test('login screen can be rendered', function () {
@@ -10,7 +12,10 @@ test('login screen can be rendered', function () {
 });
 
 test('users can authenticate using the login screen', function () {
+    $this->seed(AccessSeeder::class);
+
     $user = User::factory()->create();
+    $user->assignRole(RoleName::OfficeStaff);
 
     $response = $this->post(route('login.store'), [
         'email' => $user->email,
@@ -24,15 +29,31 @@ test('users can authenticate using the login screen', function () {
     $this->assertAuthenticated();
 });
 
+test('security guards land on gate check', function () {
+    $this->seed(AccessSeeder::class);
+
+    $user = User::factory()->create();
+    $user->assignRole(RoleName::SecurityGuard);
+
+    $response = $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ]);
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('gate-check', absolute: false));
+});
+
 test('users can not authenticate with invalid password', function () {
     $user = User::factory()->create();
 
-    $response = $this->post(route('login.store'), [
+    $response = $this->followingRedirects()->from(route('login'))->post(route('login.store'), [
         'email' => $user->email,
         'password' => 'wrong-password',
     ]);
 
-    $response->assertSessionHasErrorsIn('email');
+    $response->assertSeeText('These credentials do not match our records.');
 
     $this->assertGuest();
 });

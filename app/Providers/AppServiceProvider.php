@@ -2,9 +2,28 @@
 
 namespace App\Providers;
 
+use App\Listeners\RecordLogin;
+use App\Models\ChargeType;
+use App\Models\Facility;
+use App\Models\FamilyMember;
+use App\Models\HouseStaff;
+use App\Models\PropertyType;
+use App\Models\RequestCategory;
+use App\Models\Resident;
+use App\Models\Section;
+use App\Models\Street;
+use App\Models\TransactionType;
+use App\Models\Vehicle;
+use App\Models\VehicleSticker;
+use App\Models\ViolationType;
+use App\Policies\HouseholdPolicy;
+use App\Policies\LookupPolicy;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -24,6 +43,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureAccess();
+        Event::listen(Login::class, RecordLogin::class);
     }
 
     /**
@@ -46,5 +67,25 @@ class AppServiceProvider extends ServiceProvider
                 ->uncompromised()
             : null,
         );
+    }
+
+    protected function configureAccess(): void
+    {
+        foreach ([
+            Section::class,
+            Street::class,
+            PropertyType::class,
+            TransactionType::class,
+            ChargeType::class,
+            ViolationType::class,
+            RequestCategory::class,
+            Facility::class,
+        ] as $model) {
+            Gate::policy($model, LookupPolicy::class);
+        }
+
+        foreach ([Resident::class, FamilyMember::class, HouseStaff::class, Vehicle::class, VehicleSticker::class] as $model) {
+            Gate::policy($model, HouseholdPolicy::class);
+        }
     }
 }

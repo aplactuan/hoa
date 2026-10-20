@@ -2,11 +2,16 @@
 
 namespace App\Models;
 
+use App\Concerns\Auditable;
+use App\Concerns\HasAttachments;
+use App\Enums\Permission;
+use App\Enums\RoleName;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -24,6 +29,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
+ * @property bool $is_active
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -33,7 +39,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use Auditable, HasAttachments, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -45,7 +51,55 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
+    }
+
+    /**
+     * @return MorphToMany<Role, $this>
+     */
+    public function roles(): MorphToMany
+    {
+        return $this->morphToMany(Role::class, 'model', 'model_has_roles');
+    }
+
+    public function assignRole(RoleName|string $role): void
+    {
+        $name = $role instanceof RoleName ? $role->value : $role;
+        $roleModel = Role::query()->where('name', $name)->firstOrFail();
+
+        $this->roles()->sync([$roleModel->id]);
+        $this->unsetRelation('roles');
+    }
+
+    public function hasRole(RoleName $role): bool
+    {
+        $this->loadMissing('roles');
+
+        return $this->roles->contains('name', $role->value);
+    }
+
+    public function hasPermission(Permission|string $permission): bool
+    {
+        $name = $permission instanceof Permission ? $permission->value : $permission;
+        $this->loadMissing('roles.permissions');
+
+        return $this->roles->contains(function (Role $role) use ($name): bool {
+            return $role->permissions->contains('name', $name);
+        });
+    }
+
+    public function homeRoute(): string
+    {
+        if ($this->hasPermission(Permission::GateView) && ! $this->hasPermission(Permission::DashboardView)) {
+            return 'gate-check';
+        }
+
+        if ($this->hasPermission(Permission::DashboardView)) {
+            return 'dashboard';
+        }
+
+        return 'profile.edit';
     }
 
     /**

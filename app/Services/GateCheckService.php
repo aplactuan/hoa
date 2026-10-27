@@ -81,6 +81,6 @@ class GateCheckService
 
     private function location(Property $property): string
     {
-        return 'Block '.$property->block.' · Lot '.$property->lot.' · '.($property->street?->name ?? '');
+        return 'Block '.$property->block.' · Lot '.$property->lot.' · '.($property->street->name ?? '');
     }
 }

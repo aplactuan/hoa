@@ -14,7 +14,8 @@ class PropertyPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermission(Permission::PropertiesView);
+        return $user->hasPermission(Permission::PropertiesView)
+            || $user->hasPermission(Permission::OwnerPortalView);
     }
 
     /**
@@ -22,7 +23,8 @@ class PropertyPolicy
      */
     public function view(User $user, Property $property): bool
     {
-        return $this->viewAny($user);
+        return $user->hasPermission(Permission::PropertiesView)
+            || ($user->hasPermission(Permission::OwnerPortalView) && $user->ownsCurrentProperty($property));
     }
 
     /**

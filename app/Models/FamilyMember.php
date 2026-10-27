@@ -22,11 +22,17 @@ class FamilyMember extends Model
         return ['birth_date' => 'date', 'moved_in_on' => 'date', 'moved_out_on' => 'date', 'is_emergency_contact' => 'boolean'];
     }
 
+    /**
+     * @return BelongsTo<Property, $this>
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /**
+     * @return BelongsTo<Resident, $this>
+     */
     public function resident(): BelongsTo
     {
         return $this->belongsTo(Resident::class);

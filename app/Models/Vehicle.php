@@ -18,11 +18,17 @@ class Vehicle extends Model
     /** @use HasFactory<VehicleFactory> */
     use Auditable, HasAttachments, HasFactory, SoftDeletes;
 
+    /**
+     * @return BelongsTo<Property, $this>
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /**
+     * @return HasMany<VehicleSticker, $this>
+     */
     public function stickers(): HasMany
     {
         return $this->hasMany(VehicleSticker::class);

@@ -10,7 +10,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $started_on
+ * @property Carbon|null $ended_on
+ * @property Carbon $pass_expires_on
+ */
 #[Fillable(['code', 'property_id', 'resident_id', 'name', 'role', 'phone', 'started_on', 'ended_on', 'id_type', 'id_reference', 'pass_no', 'pass_expires_on', 'status', 'remarks', 'created_by', 'updated_by'])]
 class HouseStaff extends Model
 {
@@ -22,11 +28,17 @@ class HouseStaff extends Model
         return ['started_on' => 'date', 'ended_on' => 'date', 'pass_expires_on' => 'date'];
     }
 
+    /**
+     * @return BelongsTo<Property, $this>
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /**
+     * @return BelongsTo<Resident, $this>
+     */
     public function resident(): BelongsTo
     {
         return $this->belongsTo(Resident::class);

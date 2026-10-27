@@ -16,6 +16,9 @@ class CaseUpdate extends Model
     /** @use HasFactory<CaseUpdateFactory> */
     use Auditable, HasAttachments, HasFactory;
 
+    /**
+     * @return BelongsTo<ServiceCase, $this>
+     */
     public function serviceCase(): BelongsTo
     {
         return $this->belongsTo(ServiceCase::class);

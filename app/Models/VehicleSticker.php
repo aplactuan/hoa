@@ -9,7 +9,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $issued_on
+ * @property Carbon $expires_on
+ */
 #[Fillable(['code', 'vehicle_id', 'sticker_no', 'year', 'issued_on', 'expires_on', 'status', 'charge_id', 'created_by', 'updated_by'])]
 class VehicleSticker extends Model
 {
@@ -21,11 +26,17 @@ class VehicleSticker extends Model
         return ['year' => 'integer', 'issued_on' => 'date', 'expires_on' => 'date'];
     }
 
+    /**
+     * @return BelongsTo<Vehicle, $this>
+     */
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
     }
 
+    /**
+     * @return BelongsTo<Charge, $this>
+     */
     public function charge(): BelongsTo
     {
         return $this->belongsTo(Charge::class);

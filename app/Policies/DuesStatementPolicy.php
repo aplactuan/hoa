@@ -24,7 +24,8 @@ class DuesStatementPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermission(Permission::StatementsView);
+        return $user->hasPermission(Permission::StatementsView)
+            || $user->hasPermission(Permission::OwnerPortalView);
     }
 
     /**
@@ -32,7 +33,9 @@ class DuesStatementPolicy
      */
     public function view(User $user, DuesStatement $duesStatement): bool
     {
-        return $this->viewAny($user);
+        return $user->hasPermission(Permission::StatementsView)
+            || ($user->hasPermission(Permission::OwnerPortalView)
+                && $user->ownsCurrentProperty($duesStatement->property_id));
     }
 
     /**

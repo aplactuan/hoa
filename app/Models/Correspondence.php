@@ -22,11 +22,17 @@ class Correspondence extends Model
         return ['acknowledged_on' => 'date'];
     }
 
+    /**
+     * @return BelongsTo<Property, $this>
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function related(): MorphTo
     {
         return $this->morphTo();

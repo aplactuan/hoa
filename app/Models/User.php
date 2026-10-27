@@ -10,7 +10,9 @@ use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -63,6 +65,39 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return $this->morphToMany(Role::class, 'model', 'model_has_roles');
     }
 
+    /**
+     * @return HasMany<Owner, $this>
+     */
+    public function ownerRecords(): HasMany
+    {
+        return $this->hasMany(Owner::class);
+    }
+
+    /**
+     * @return HasMany<Owner, $this>
+     */
+    public function currentOwnerRecords(): HasMany
+    {
+        return $this->ownerRecords()->where('status', 'Current');
+    }
+
+    /**
+     * @return Builder<Property>
+     */
+    public function currentOwnedProperties(): Builder
+    {
+        return Property::query()->whereHas('owners', function (Builder $query): void {
+            $query->where('user_id', $this->id)->where('status', 'Current');
+        });
+    }
+
+    public function ownsCurrentProperty(Property|int $property): bool
+    {
+        $propertyId = $property instanceof Property ? $property->getKey() : $property;
+
+        return $this->currentOwnerRecords()->where('property_id', $propertyId)->exists();
+    }
+
     public function assignRole(RoleName|string $role): void
     {
         $name = $role instanceof RoleName ? $role->value : $role;
@@ -91,6 +126,10 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 
     public function homeRoute(): string
     {
+        if ($this->hasRole(RoleName::Owner)) {
+            return 'owner.dashboard';
+        }
+
         if ($this->hasPermission(Permission::GateView) && ! $this->hasPermission(Permission::DashboardView)) {
             return 'gate-check';
         }

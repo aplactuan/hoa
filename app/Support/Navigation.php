@@ -36,6 +36,14 @@ class Navigation
                     continue;
                 }
 
+                $roles = $item['roles'] ?? [];
+
+                if (is_array($roles) && $roles !== [] && ! $user->roles->contains(
+                    fn ($role): bool => in_array($role->name, $roles, true)
+                )) {
+                    continue;
+                }
+
                 $badge = null;
 
                 if (($item['badge'] ?? null) === 'users') {

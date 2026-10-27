@@ -24,7 +24,8 @@ class ChargePolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermission(Permission::ChargesView);
+        return $user->hasPermission(Permission::ChargesView)
+            || $user->hasPermission(Permission::OwnerPortalView);
     }
 
     /**
@@ -32,7 +33,9 @@ class ChargePolicy
      */
     public function view(User $user, Charge $charge): bool
     {
-        return $this->viewAny($user);
+        return $user->hasPermission(Permission::ChargesView)
+            || ($user->hasPermission(Permission::OwnerPortalView)
+                && $user->ownsCurrentProperty($charge->property_id));
     }
 
     /**

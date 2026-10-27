@@ -29,6 +29,8 @@ enum Permission: string
     case MasterDataManage = 'master-data.manage';
     case DevicesManage = 'devices.manage';
     case FinancialView = 'financial.view';
+    case OwnerPortalView = 'owner-portal.view';
+    case OwnerChangesManage = 'owner-changes.manage';
 
     public function label(): string
     {
@@ -58,6 +60,8 @@ enum Permission: string
             self::MasterDataManage => 'Manage lookup lists',
             self::DevicesManage => 'Manage devices',
             self::FinancialView => 'View money amounts',
+            self::OwnerPortalView => 'Use the owner portal',
+            self::OwnerChangesManage => 'Review owner change requests',
         };
     }
 }

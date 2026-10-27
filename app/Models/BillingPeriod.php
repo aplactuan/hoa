@@ -20,6 +20,9 @@ class BillingPeriod extends Model
         return ['year' => 'integer', 'month' => 'integer', 'generated_at' => 'datetime'];
     }
 
+    /**
+     * @return HasMany<DuesStatement, $this>
+     */
     public function statements(): HasMany
     {
         return $this->hasMany(DuesStatement::class);

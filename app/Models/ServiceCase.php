@@ -22,16 +22,25 @@ class ServiceCase extends Model
         return ['resolved_on' => 'date'];
     }
 
+    /**
+     * @return BelongsTo<Property, $this>
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /**
+     * @return BelongsTo<RequestCategory, $this>
+     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(RequestCategory::class, 'request_category_id');
     }
 
+    /**
+     * @return HasMany<CaseUpdate, $this>
+     */
     public function updates(): HasMany
     {
         return $this->hasMany(CaseUpdate::class);

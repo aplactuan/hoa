@@ -19,6 +19,9 @@ class ImportBatch extends Model
         return ['row_count' => 'integer', 'imported_count' => 'integer', 'error_count' => 'integer', 'reconciled_amount' => 'decimal:2'];
     }
 
+    /**
+     * @return HasMany<ImportError, $this>
+     */
     public function errors(): HasMany
     {
         return $this->hasMany(ImportError::class);

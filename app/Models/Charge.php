@@ -9,7 +9,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property string $amount
+ * @property Carbon|null $due_on
+ */
 #[Fillable(['code', 'property_id', 'charge_type_id', 'source_type', 'source_id', 'description', 'amount', 'due_on', 'status', 'waiver_reason', 'waiver_requested_by', 'waived_by', 'created_by', 'updated_by'])]
 class Charge extends Model
 {
@@ -21,11 +26,17 @@ class Charge extends Model
         return ['amount' => 'decimal:2', 'due_on' => 'date'];
     }
 
+    /**
+     * @return BelongsTo<Property, $this>
+     */
     public function property(): BelongsTo
     {
         return $this->belongsTo(Property::class);
     }
 
+    /**
+     * @return MorphMany<PaymentAllocation, $this>
+     */
     public function allocations(): MorphMany
     {
         return $this->morphMany(PaymentAllocation::class, 'allocatable');

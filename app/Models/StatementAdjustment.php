@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property string $amount
+ */
 #[Fillable(['dues_statement_id', 'amount', 'kind', 'reason', 'status', 'requested_by', 'approved_by', 'approved_at'])]
 class StatementAdjustment extends Model
 {
@@ -20,6 +23,9 @@ class StatementAdjustment extends Model
         return ['amount' => 'decimal:2', 'approved_at' => 'datetime'];
     }
 
+    /**
+     * @return BelongsTo<DuesStatement, $this>
+     */
     public function statement(): BelongsTo
     {
         return $this->belongsTo(DuesStatement::class, 'dues_statement_id');

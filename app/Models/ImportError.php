@@ -14,6 +14,9 @@ class ImportError extends Model
     /** @use HasFactory<ImportErrorFactory> */
     use HasFactory;
 
+    /**
+     * @return BelongsTo<ImportBatch, $this>
+     */
     public function batch(): BelongsTo
     {
         return $this->belongsTo(ImportBatch::class, 'import_batch_id');

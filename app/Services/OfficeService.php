@@ -12,8 +12,10 @@ use App\Models\RequestCategory;
 use App\Models\ServiceCase;
 use App\Models\Setting;
 use App\Models\TransactionType;
+use App\Models\User;
 use App\Models\Violation;
 use App\Models\ViolationType;
+use App\Notifications\OfficeAttention;
 use App\Support\BillingMath;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -56,6 +58,7 @@ class OfficeService
         }
 
         $transaction->update(['status' => 'Completed', 'completed_on' => now()->toDateString(), 'updated_by' => $userId]);
+        $this->notifyOwnerRequester($transaction->created_by, 'Service request completed', $transaction->code.' is complete.', 'owner.requests');
     }
 
     public function logCase(Property $property, ?RequestCategory $category, string $filedBy, string $description, string $priority, ?int $userId = null): ServiceCase
@@ -94,6 +97,10 @@ class OfficeService
             $case->updates()->create(['note' => $note, 'user_id' => $userId]);
             $case->update(['status' => 'In Progress', 'updated_by' => $userId]);
         });
+
+        if ($case->created_by !== $userId) {
+            $this->notifyOwnerRequester($case->created_by, 'Request updated', $case->code.' has a new update.', 'owner.requests');
+        }
     }
 
     public function resolveCase(ServiceCase $case, string $actionTaken, ?int $userId = null): void
@@ -111,6 +118,8 @@ class OfficeService
                 'updated_by' => $userId,
             ]);
         });
+
+        $this->notifyOwnerRequester($case->created_by, 'Request resolved', $case->code.' was resolved.', 'owner.requests');
     }
 
     public function recordViolation(Property $property, ViolationType $type, string $description, ?int $userId = null): Violation
@@ -139,7 +148,7 @@ class OfficeService
                 'type' => 'Notice',
                 'subject' => $violation->violationType->name,
                 'sender' => Setting::current()->hoa_name,
-                'recipient' => $property->currentOwner?->name ?? 'Property owner',
+                'recipient' => $property->currentOwner->name ?? 'Property owner',
                 'status' => 'Pending',
                 'related_type' => Violation::class,
                 'related_id' => $violation->id,
@@ -227,6 +236,8 @@ class OfficeService
                 'updated_by' => $administratorId,
             ]);
         });
+
+        $this->notifyOwnerRequester($reservation->created_by, 'Facility booking approved', $reservation->code.' was approved.', 'owner.facilities');
     }
 
     public function declineReservation(FacilityReservation $reservation, int $administratorId): void
@@ -236,6 +247,7 @@ class OfficeService
         }
 
         $reservation->update(['approval_status' => 'Declined', 'approved_by' => $administratorId, 'updated_by' => $administratorId]);
+        $this->notifyOwnerRequester($reservation->created_by, 'Facility booking declined', $reservation->code.' was declined.', 'owner.facilities');
     }
 
     public function refundDeposit(FacilityReservation $reservation, string $reference, int $treasurerId): void
@@ -262,5 +274,18 @@ class OfficeService
                 'updated_by' => $treasurerId,
             ]);
         });
+    }
+
+    private function notifyOwnerRequester(?int $userId, string $title, string $message, string $routeName): void
+    {
+        if ($userId === null) {
+            return;
+        }
+
+        $user = User::query()->whereKey($userId)->where('is_active', true)->first();
+
+        if ($user?->hasRole(RoleName::Owner)) {
+            $user->notify(new OfficeAttention($title, $message, $routeName));
+        }
     }
 }

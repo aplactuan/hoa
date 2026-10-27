@@ -21,6 +21,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::livewire('search', 'pages::search')->name('search');
     Route::livewire('notifications', 'pages::notifications')->name('notifications.index');
+    Route::prefix('owner')->name('owner.')->middleware('owner')->group(function () {
+        Route::livewire('/', 'pages::owner.dashboard')->name('dashboard');
+        Route::livewire('property', 'pages::owner.property')->name('property');
+        Route::livewire('account', 'pages::owner.account')->name('account');
+        Route::livewire('requests', 'pages::owner.requests')->name('requests');
+        Route::livewire('facilities', 'pages::owner.facilities')->name('facilities');
+        Route::livewire('notices', 'pages::owner.notices')->name('notices');
+        Route::livewire('changes', 'pages::owner.changes')->name('changes');
+    });
+
+    Route::livewire('owner-changes', 'pages::owner-changes')
+        ->middleware('permission:'.Permission::OwnerChangesManage->value)
+        ->name('owner-changes.index');
+
     Route::livewire('imports', 'pages::imports')
         ->middleware('permission:'.Permission::MasterDataManage->value)
         ->name('imports.index');

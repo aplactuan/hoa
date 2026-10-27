@@ -8,6 +8,7 @@ enum RoleName: string
     case Treasurer = 'treasurer';
     case OfficeStaff = 'office_staff';
     case SecurityGuard = 'security_guard';
+    case Owner = 'owner';
 
     public function label(): string
     {
@@ -16,6 +17,7 @@ enum RoleName: string
             self::Treasurer => 'Treasurer',
             self::OfficeStaff => 'Office Staff',
             self::SecurityGuard => 'Security Guard',
+            self::Owner => 'Owner',
         };
     }
 }

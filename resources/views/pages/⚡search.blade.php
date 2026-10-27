@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Permission;
+use App\Enums\RoleName;
 use App\Models\Device;
 use App\Models\DuesStatement;
 use App\Models\Facility;
@@ -46,6 +47,48 @@ new #[Title('Search')] class extends Component
 
         $like = '%'.$term.'%';
         $groups = [];
+
+        if ($user->hasRole(RoleName::Owner)) {
+            $propertyIds = $user->currentOwnedProperties()->pluck('properties.id');
+            $groups[] = [
+                'label' => __('My properties'),
+                'items' => Property::query()->whereIn('id', $propertyIds)
+                    ->where(function ($query) use ($like): void {
+                        $query->where('code', 'like', $like)
+                            ->orWhere('block', 'like', $like)
+                            ->orWhere('lot', 'like', $like);
+                    })->limit(8)->get()
+                    ->map(fn (Property $property): array => [
+                        'label' => $property->code.' · Block '.$property->block.' Lot '.$property->lot,
+                        'url' => route('owner.property'),
+                    ])->all(),
+            ];
+            $groups[] = [
+                'label' => __('My statements'),
+                'items' => DuesStatement::query()->whereIn('property_id', $propertyIds)
+                    ->where('code', 'like', $like)->limit(8)->get()
+                    ->map(fn (DuesStatement $statement): array => ['label' => $statement->code, 'url' => route('statements.print', $statement)])
+                    ->all(),
+            ];
+            $groups[] = [
+                'label' => __('My receipts'),
+                'items' => Payment::query()->whereIn('property_id', $propertyIds)
+                    ->where('or_no', 'like', $like)->limit(8)->get()
+                    ->map(fn (Payment $payment): array => ['label' => $payment->or_no, 'url' => route('receipts.print', $payment)])
+                    ->all(),
+            ];
+            $groups[] = [
+                'label' => __('My requests'),
+                'items' => ServiceCase::query()->whereIn('property_id', $propertyIds)
+                    ->where(function ($query) use ($like): void {
+                        $query->where('code', 'like', $like)->orWhere('description', 'like', $like);
+                    })->limit(8)->get()
+                    ->map(fn (ServiceCase $case): array => ['label' => $case->code.' · '.$case->status, 'url' => route('owner.requests')])
+                    ->all(),
+            ];
+
+            return array_values(array_filter($groups, fn (array $group): bool => $group['items'] !== []));
+        }
 
         if ($user->hasPermission(Permission::PropertiesView)) {
             $groups[] = [

@@ -14,7 +14,8 @@ class OwnerPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermission(Permission::OwnersView);
+        return $user->hasPermission(Permission::OwnersView)
+            || $user->hasPermission(Permission::OwnerPortalView);
     }
 
     /**
@@ -22,7 +23,10 @@ class OwnerPolicy
      */
     public function view(User $user, Owner $owner): bool
     {
-        return $this->viewAny($user);
+        return $user->hasPermission(Permission::OwnersView)
+            || ($user->hasPermission(Permission::OwnerPortalView)
+                && $owner->user_id === $user->id
+                && $owner->status === 'Current');
     }
 
     /**

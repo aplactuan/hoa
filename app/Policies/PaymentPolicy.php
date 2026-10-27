@@ -24,7 +24,8 @@ class PaymentPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->hasPermission(Permission::ReceiptsView);
+        return $user->hasPermission(Permission::ReceiptsView)
+            || $user->hasPermission(Permission::OwnerPortalView);
     }
 
     /**
@@ -32,7 +33,9 @@ class PaymentPolicy
      */
     public function view(User $user, Payment $payment): bool
     {
-        return $this->viewAny($user);
+        return $user->hasPermission(Permission::ReceiptsView)
+            || ($user->hasPermission(Permission::OwnerPortalView)
+                && $user->ownsCurrentProperty($payment->property_id));
     }
 
     /**

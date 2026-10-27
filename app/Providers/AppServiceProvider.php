@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Livewire;
+use Livewire\Mechanisms\HandleRequests\HandleRequests;
+use Livewire\Mechanisms\HandleRequests\RequireLivewireHeaders;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -47,6 +49,11 @@ class AppServiceProvider extends ServiceProvider
         Livewire::setUpdateRoute(
             fn (array $handle, string $path) => Route::post('/livewire/update', $handle),
         );
+
+        Route::post('/livewire-{hash}/update', [HandleRequests::class, 'handleUpdate'])
+            ->middleware(['web', RequireLivewireHeaders::class])
+            ->where('hash', '[A-Za-z0-9]+')
+            ->name('livewire.legacy-update');
 
         $this->configureDefaults();
         $this->configureAccess();

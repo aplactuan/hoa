@@ -18,6 +18,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -101,7 +102,13 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function assignRole(RoleName|string $role): void
     {
         $name = $role instanceof RoleName ? $role->value : $role;
-        $roleModel = Role::query()->where('name', $name)->firstOrFail();
+        $roleModel = Role::query()->where('name', $name)->first();
+
+        if ($roleModel === null) {
+            throw ValidationException::withMessages([
+                'role' => 'The selected role has not been seeded. Run the access seeder and try again.',
+            ]);
+        }
 
         $this->roles()->sync([$roleModel->id]);
         $this->unsetRelation('roles');

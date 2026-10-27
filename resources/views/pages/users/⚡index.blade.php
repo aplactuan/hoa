@@ -47,7 +47,14 @@ new #[Title('Users')] class extends DataTableComponent
         $role = RoleName::from($validated['role']);
 
         if ($role === RoleName::Owner) {
-            $owner = Owner::query()->where('status', 'Current')->whereNull('user_id')->findOrFail((int) $validated['ownerId']);
+            $owner = Owner::query()->where('status', 'Current')->whereNull('user_id')->find((int) $validated['ownerId']);
+
+            if ($owner === null) {
+                $this->addError('ownerId', __('Choose a current owner record that is not already linked.'));
+
+                return;
+            }
+
             $inviteOwnerUser->handle($owner, $validated['email'], auth()->id());
         } else {
             $inviteUser->handle($validated['name'], $validated['email'], $role);

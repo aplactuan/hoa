@@ -149,6 +149,21 @@ test('cancelled and declined owner changes do not update official records', func
         ->and($declined->fresh()->status)->toBe(OwnerChangeStatus::Declined);
 });
 
+test('an owner cannot add a family member until a current resident exists', function () {
+    $property = Property::factory()->create();
+    $user = User::factory()->create();
+    $user->assignRole(RoleName::Owner);
+    app(LinkOwnerUser::class)->handle($user, currentOwner($property));
+
+    Livewire::actingAs($user)
+        ->test('pages::owner.property')
+        ->assertSee('Submit a resident first')
+        ->set('name', 'Ana Santos')
+        ->set('detail', 'Daughter')
+        ->call('submitFamily')
+        ->assertHasErrors(['name']);
+});
+
 test('a former owner immediately loses portal and financial document access', function () {
     $property = Property::factory()->create();
     $user = User::factory()->create();

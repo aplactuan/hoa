@@ -10,6 +10,7 @@ use App\Services\OwnerChangeRequestService;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\WithFileUploads;
@@ -132,7 +133,14 @@ new #[Title('My Property')] class extends OwnerPortalComponent
 
     public function submitFamily(OwnerChangeRequestService $changes): void
     {
-        abort_unless($this->selectedProperty && $this->record?->currentResident, 422);
+        abort_unless($this->selectedProperty, 404);
+
+        if (! $this->record?->currentResident) {
+            throw ValidationException::withMessages([
+                'name' => __('A current resident is required before adding a family member. Submit a resident first and wait for staff approval.'),
+            ]);
+        }
+
         $data = $this->validate([
             'name' => ['required', 'string', 'max:255'], 'detail' => ['required', 'string', 'max:100'],
             'recordPhone' => ['nullable', 'string', 'max:30'], 'recordEmail' => ['nullable', 'email', 'max:255'],
@@ -247,7 +255,7 @@ new #[Title('My Property')] class extends OwnerPortalComponent
         @if ($tab === 'Household')
             <div class="grid gap-6 xl:grid-cols-2">
                 <flux:card class="space-y-3"><flux:heading size="lg">{{ __('Resident') }}</flux:heading><flux:text>{{ $this->record->currentResident?->name ?? __('No current resident') }}</flux:text><form wire:submit="submitResident" class="grid gap-3 sm:grid-cols-2"><flux:input label="{{ __('Name') }}" wire:model="name" /><flux:input label="{{ __('Phone') }}" wire:model="recordPhone" /><flux:input label="{{ __('Email') }}" type="email" wire:model="recordEmail" /><flux:select label="{{ __('Occupancy') }}" wire:model="recordType"><flux:select.option value="Owner-Occupied">Owner-Occupied</flux:select.option><flux:select.option value="Tenant">Tenant</flux:select.option><flux:select.option value="Caretaker">Caretaker</flux:select.option><flux:select.option value="Relative">Relative</flux:select.option></flux:select><flux:input label="{{ __('Effective date') }}" type="date" wire:model="date" /><div class="flex items-end gap-2"><flux:button type="submit" variant="primary">{{ __('Submit') }}</flux:button>@if ($this->record->currentResident)<flux:button type="button" wire:click="moveOut">{{ __('Move out') }}</flux:button>@endif</div></form></flux:card>
-                <flux:card class="space-y-3"><flux:heading size="lg">{{ __('Family members') }}</flux:heading>@foreach ($this->record->familyMembers->where('status', 'Active') as $member)<div wire:key="owner-family-{{ $member->id }}" class="flex justify-between gap-2 border-t py-2"><span>{{ $member->name }} · {{ $member->relationship }}</span><span><flux:button size="sm" variant="ghost" wire:click="edit('family', {{ $member->id }})">{{ __('Edit') }}</flux:button><flux:button size="sm" variant="ghost" wire:click="deactivate('family', {{ $member->id }})">{{ __('Remove') }}</flux:button></span></div>@endforeach<form wire:submit="submitFamily" class="grid gap-3 sm:grid-cols-2"><flux:input label="{{ __('Name') }}" wire:model="name" /><flux:input label="{{ __('Relationship') }}" wire:model="detail" /><flux:input label="{{ __('Phone') }}" wire:model="recordPhone" /><flux:input label="{{ __('Email') }}" type="email" wire:model="recordEmail" /><div class="sm:col-span-2"><flux:button type="submit" variant="primary">{{ __('Submit family change') }}</flux:button></div></form></flux:card>
+                <flux:card class="space-y-3"><flux:heading size="lg">{{ __('Family members') }}</flux:heading>@foreach ($this->record->familyMembers->where('status', 'Active') as $member)<div wire:key="owner-family-{{ $member->id }}" class="flex justify-between gap-2 border-t py-2"><span>{{ $member->name }} · {{ $member->relationship }}</span><span><flux:button size="sm" variant="ghost" wire:click="edit('family', {{ $member->id }})">{{ __('Edit') }}</flux:button><flux:button size="sm" variant="ghost" wire:click="deactivate('family', {{ $member->id }})">{{ __('Remove') }}</flux:button></span></div>@endforeach @if ($this->record->currentResident)<form wire:submit="submitFamily" class="grid gap-3 sm:grid-cols-2"><flux:input label="{{ __('Name') }}" wire:model="name" /><flux:input label="{{ __('Relationship') }}" wire:model="detail" /><flux:input label="{{ __('Phone') }}" wire:model="recordPhone" /><flux:input label="{{ __('Email') }}" type="email" wire:model="recordEmail" /><div class="sm:col-span-2"><flux:button type="submit" variant="primary">{{ __('Submit family change') }}</flux:button></div></form>@else<flux:callout variant="warning" icon="exclamation-triangle" heading="{{ __('Current resident required') }}">{{ __('Submit a resident first, then wait for staff approval before adding family members.') }}</flux:callout>@endif</flux:card>
                 <flux:card class="space-y-3 xl:col-span-2"><flux:heading size="lg">{{ __('House staff') }}</flux:heading>@foreach ($this->record->houseStaff->where('status', 'Active') as $staff)<div wire:key="owner-staff-{{ $staff->id }}" class="flex justify-between gap-2 border-t py-2"><span>{{ $staff->name }} · {{ $staff->role }} · Pass {{ $staff->pass_no }}</span><span><flux:button size="sm" variant="ghost" wire:click="edit('staff', {{ $staff->id }})">{{ __('Edit') }}</flux:button><flux:button size="sm" variant="ghost" wire:click="deactivate('staff', {{ $staff->id }})">{{ __('Deactivate') }}</flux:button></span></div>@endforeach<form wire:submit="submitStaff" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><flux:input label="{{ __('Name') }}" wire:model="name" /><flux:input label="{{ __('Role') }}" wire:model="detail" /><flux:input label="{{ __('Phone') }}" wire:model="recordPhone" /><flux:input label="{{ __('ID type') }}" wire:model="recordType" /><flux:input label="{{ __('ID reference') }}" wire:model="recordEmail" /><div class="flex items-end"><flux:button type="submit" variant="primary">{{ __('Submit staff change') }}</flux:button></div></form></flux:card>
             </div>
         @elseif ($tab === 'Vehicles')

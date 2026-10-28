@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\ImportBatch;
 use App\Models\Property;
+use App\Models\Section;
+use App\Models\Street;
 use App\Models\Vehicle;
 use App\Support\BillingMath;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +20,7 @@ class SpreadsheetImport
     public function templates(): array
     {
         return [
+            'Streets and Phases' => ['street_name', 'phase'],
             'Properties' => ['block', 'lot', 'lot_area', 'house_no'],
             'Owners' => ['property_code', 'name', 'ownership_type', 'started_on', 'phone', 'email'],
             'Residents' => ['property_code', 'name', 'occupancy_type', 'moved_in_on', 'phone'],
@@ -128,6 +131,7 @@ class SpreadsheetImport
                 }
 
                 $key = match ($source) {
+                    'Streets and Phases' => $data['phase'].'-'.$data['street_name'],
                     'Properties' => $data['block'].'-'.$data['lot'],
                     'Vehicles' => strtoupper(preg_replace('/[^A-Z0-9]/i', '', $data['plate_no']) ?? ''),
                     'Opening Balances' => $data['account_no'],
@@ -159,6 +163,7 @@ class SpreadsheetImport
     private function rules(string $source): array
     {
         return match ($source) {
+            'Streets and Phases' => ['street_name' => ['required', 'string', 'max:255'], 'phase' => ['required', 'string', 'max:255']],
             'Properties' => ['block' => ['required', 'integer', 'min:1'], 'lot' => ['required', 'integer', 'min:1'], 'lot_area' => ['required', 'numeric', 'gt:0'], 'house_no' => ['nullable', 'string', 'max:100']],
             'Owners' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'ownership_type' => ['required', 'in:Sole Owner,Co-Owner'], 'started_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100'], 'email' => ['nullable', 'email']],
             'Residents' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'occupancy_type' => ['required', 'in:Owner,Tenant,Caretaker'], 'moved_in_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100']],
@@ -171,6 +176,10 @@ class SpreadsheetImport
     private function alreadyExists(string $source, array $data): bool
     {
         return match ($source) {
+            'Streets and Phases' => Street::query()
+                ->where('name', $data['street_name'])
+                ->whereHas('section', fn ($query) => $query->where('name', $data['phase']))
+                ->exists(),
             'Properties' => Property::query()->where('block', $data['block'])->where('lot', $data['lot'])->exists(),
             'Owners' => false,
             'Residents' => Property::query()->where('code', $data['property_code'])->whereNotNull('current_resident_id')->exists(),
@@ -184,6 +193,20 @@ class SpreadsheetImport
     /** @param array<string, string> $data */
     private function importRow(string $source, array $data, ?int $userId): int
     {
+        if ($source === 'Streets and Phases') {
+            $phase = Section::query()->firstOrCreate(
+                ['name' => $data['phase']],
+                ['is_active' => true],
+            );
+
+            Street::query()->firstOrCreate(
+                ['section_id' => $phase->id, 'name' => $data['street_name']],
+                ['is_active' => true],
+            );
+
+            return 0;
+        }
+
         if ($source === 'Properties') {
             $this->registry->createProperty(['block' => $data['block'], 'lot' => $data['lot'], 'lot_area' => $data['lot_area'], 'house_no' => $data['house_no'] ?: null], $userId);
 

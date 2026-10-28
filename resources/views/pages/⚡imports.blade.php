@@ -57,7 +57,7 @@ new #[Title('Spreadsheet import')] class extends Component
     <x-page-header title="Spreadsheet import" subtitle="Preview CSV rows and errors before adding records." />
     <flux:card class="space-y-4">
         <flux:heading size="lg">CSV layout</flux:heading>
-        <flux:text>Import properties first, then owners, residents, vehicles, and opening balances. Dates use YYYY-MM-DD. Each file must have the exact header shown below.</flux:text>
+        <flux:text>Import streets and phases first, then properties, owners, residents, vehicles, and opening balances. A missing phase is created automatically. Dates use YYYY-MM-DD. Each file must have the exact header shown below.</flux:text>
         <div class="space-y-2 text-sm">
             @foreach (app(SpreadsheetImport::class)->templates() as $name => $columns)
                 <p><strong>{{ $name }}:</strong> <code>{{ implode(',', $columns) }}</code></p>

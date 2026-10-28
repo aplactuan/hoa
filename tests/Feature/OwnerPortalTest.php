@@ -7,6 +7,7 @@ use App\Enums\OwnerChangeType;
 use App\Enums\RoleName;
 use App\Models\DuesStatement;
 use App\Models\Owner;
+use App\Models\OwnerChangeRequest;
 use App\Models\Payment;
 use App\Models\Property;
 use App\Models\User;
@@ -158,10 +159,34 @@ test('an owner cannot add a family member until a current resident exists', func
     Livewire::actingAs($user)
         ->test('pages::owner.property')
         ->assertSee('Submit a resident first')
-        ->set('name', 'Ana Santos')
-        ->set('detail', 'Daughter')
+        ->set('familyName', 'Ana Santos')
+        ->set('familyRelationship', 'Daughter')
         ->call('submitFamily')
-        ->assertHasErrors(['name']);
+        ->assertHasErrors(['familyName']);
+});
+
+test('submitting a resident does not validate house staff fields', function () {
+    Notification::fake();
+    $property = Property::factory()->create();
+    $user = User::factory()->create();
+    $user->assignRole(RoleName::Owner);
+    app(LinkOwnerUser::class)->handle($user, currentOwner($property));
+
+    Livewire::actingAs($user)
+        ->test('pages::owner.property')
+        ->set('residentName', 'Adrian Lactuan')
+        ->set('residentPhone', '09363538792')
+        ->set('residentEmail', 'aplactuan@gmail.com')
+        ->call('submitResident')
+        ->assertHasNoErrors()
+        ->assertDontSee('The record type field is required')
+        ->assertDontSee('The staff id type field is required');
+
+    $changeRequest = OwnerChangeRequest::query()->where('property_id', $property->id)->sole();
+
+    expect($changeRequest->type)->toBe(OwnerChangeType::ResidentMoveIn)
+        ->and($changeRequest->payload['name'])->toBe('Adrian Lactuan')
+        ->and($changeRequest->payload['occupancy_type'])->toBe('Owner-Occupied');
 });
 
 test('a former owner immediately loses portal and financial document access', function () {

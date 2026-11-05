@@ -24,6 +24,11 @@ class Property extends Model
     /** @use HasFactory<PropertyFactory> */
     use Auditable, HasAttachments, HasFactory, SoftDeletes;
 
+    public static function codeFor(int $block, int $lot): string
+    {
+        return 'B'.$block.'L'.$lot;
+    }
+
     protected function casts(): array
     {
         return ['lot_area' => 'decimal:2'];

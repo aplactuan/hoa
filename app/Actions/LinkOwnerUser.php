@@ -2,7 +2,6 @@
 
 namespace App\Actions;
 
-use App\Enums\RoleName;
 use App\Models\Owner;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -16,12 +15,8 @@ class LinkOwnerUser
             $user = User::query()->lockForUpdate()->findOrFail($user->id);
             $owner = Owner::query()->lockForUpdate()->findOrFail($owner->id);
 
-            if (! $user->hasRole(RoleName::Owner)) {
-                throw ValidationException::withMessages(['ownerId' => 'Only Owner accounts can be linked to an owner record.']);
-            }
-
             if ($owner->status !== 'Current') {
-                throw ValidationException::withMessages(['ownerId' => 'Only a current owner can receive portal access.']);
+                throw ValidationException::withMessages(['ownerId' => 'Only a current owner can be linked to an account.']);
             }
 
             if ($owner->user_id !== null && $owner->user_id !== $user->id) {

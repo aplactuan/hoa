@@ -24,7 +24,7 @@ class SpreadsheetImport
             'Properties' => ['block', 'lot', 'lot_area', 'house_no'],
             'Owners' => ['property_code', 'name', 'ownership_type', 'started_on', 'phone', 'email'],
             'Residents' => ['property_code', 'name', 'occupancy_type', 'moved_in_on', 'phone'],
-            'Vehicles' => ['property_code', 'driver_name', 'type', 'plate_no', 'make', 'model', 'color'],
+            'Vehicles' => ['property_code', 'owner_name', 'type', 'plate_no', 'make', 'model', 'color', 'cr_number'],
             'Opening Balances' => ['account_no', 'amount', 'as_of'],
         ];
     }
@@ -167,7 +167,7 @@ class SpreadsheetImport
             'Properties' => ['block' => ['required', 'integer', 'min:1'], 'lot' => ['required', 'integer', 'min:1'], 'lot_area' => ['required', 'numeric', 'gt:0'], 'house_no' => ['nullable', 'string', 'max:100']],
             'Owners' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'ownership_type' => ['required', 'in:Sole Owner,Co-Owner'], 'started_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100'], 'email' => ['nullable', 'email']],
             'Residents' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'occupancy_type' => ['required', 'in:Owner,Tenant,Caretaker'], 'moved_in_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100']],
-            'Vehicles' => ['property_code' => ['required', 'exists:properties,code'], 'driver_name' => ['required', 'string', 'max:255'], 'type' => ['required', 'string', 'max:100'], 'plate_no' => ['required', 'string', 'max:100'], 'make' => ['nullable', 'string'], 'model' => ['nullable', 'string'], 'color' => ['nullable', 'string']],
+            'Vehicles' => ['property_code' => ['required', 'exists:properties,code'], 'owner_name' => ['required', 'string', 'max:255'], 'type' => ['required', 'string', 'max:100'], 'plate_no' => ['required', 'string', 'max:20'], 'make' => ['required', 'string', 'max:255'], 'model' => ['required', 'string', 'max:255'], 'color' => ['required', 'string', 'max:255'], 'cr_number' => ['required', 'string', 'max:255']],
             default => ['account_no' => ['required', 'exists:properties,account_no'], 'amount' => ['required', 'numeric', 'min:0'], 'as_of' => ['required', 'date_format:Y-m-d']],
         };
     }
@@ -220,7 +220,7 @@ class SpreadsheetImport
         } elseif ($source === 'Residents') {
             $this->registry->moveIn($property, ['name' => $data['name'], 'occupancy_type' => $data['occupancy_type'], 'moved_in_on' => $data['moved_in_on'], 'phone' => $data['phone'] ?: null], $userId);
         } elseif ($source === 'Vehicles') {
-            $this->registry->registerVehicle($property, ['driver_name' => $data['driver_name'], 'type' => $data['type'], 'plate_no' => $data['plate_no'], 'make' => $data['make'] ?: null, 'model' => $data['model'] ?: null, 'color' => $data['color'] ?: null], $userId);
+            $this->registry->registerVehicle($property, ['driver_name' => $data['owner_name'], 'type' => $data['type'], 'plate_no' => $data['plate_no'], 'make' => $data['make'], 'model' => $data['model'], 'color' => $data['color'], 'cr_number' => $data['cr_number']], $userId);
         } elseif (BillingMath::cents($data['amount']) > 0) {
             $this->billing->createCharge($property, 'Balance forward', $data['amount'], $data['as_of'], $userId);
         }

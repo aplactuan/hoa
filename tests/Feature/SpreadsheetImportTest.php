@@ -5,6 +5,7 @@ use App\Models\Property;
 use App\Models\Section;
 use App\Models\Street;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\AccountService;
 use App\Services\SpreadsheetImport;
 use Database\Seeders\AccessSeeder;
@@ -93,6 +94,29 @@ test('opening balances import atomically and reconciles the account total', func
             ->and($batch->fresh()->reconciled_amount)->toBe('375.50')
             ->and(app(AccountService::class)->summary($first)['outstanding_cents'])->toBe(12550);
         expect(fn () => $service->commit($batch->fresh(), $path, null))->toThrow(ValidationException::class);
+    } finally {
+        unlink($path);
+    }
+});
+
+test('vehicle import requires and saves owner and registration details', function () {
+    $property = Property::factory()->create();
+    $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
+    file_put_contents($path, "property_code,owner_name,type,plate_no,make,model,color,cr_number\n{$property->code},Maria Santos,Car,ABC 123,Toyota,Vios,Blue,\n");
+
+    try {
+        $service = app(SpreadsheetImport::class);
+        $invalidBatch = $service->preview('Vehicles', $path, 'vehicles.csv', null);
+
+        expect($invalidBatch->error_count)->toBe(1)
+            ->and(Vehicle::query()->count())->toBe(0);
+
+        file_put_contents($path, "property_code,owner_name,type,plate_no,make,model,color,cr_number\n{$property->code},Maria Santos,Car,ABC 123,Toyota,Vios,Blue,CR-12345\n");
+        $batch = $service->preview('Vehicles', $path, 'vehicles.csv', null);
+        $service->commit($batch, $path, null);
+
+        expect(Vehicle::query()->sole()->cr_number)->toBe('CR-12345')
+            ->and(Vehicle::query()->sole()->driver_name)->toBe('Maria Santos');
     } finally {
         unlink($path);
     }

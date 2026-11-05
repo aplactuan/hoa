@@ -8,6 +8,7 @@ use App\Models\Resident;
 use App\Models\Vehicle;
 use App\Models\VehicleSticker;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class PropertyRegistry
@@ -18,11 +19,10 @@ class PropertyRegistry
     public function createProperty(array $attributes, ?int $userId = null): Property
     {
         return DB::transaction(function () use ($attributes, $userId): Property {
-            $code = $this->codes->next('property');
-            $number = substr($code, 4);
+            $number = substr($this->codes->next('property'), 4);
 
             return Property::query()->create(array_merge($attributes, [
-                'code' => $code,
+                'code' => Property::codeFor((int) $attributes['block'], (int) $attributes['lot']),
                 'account_no' => 'ACC-'.$number,
                 'membership_no' => 'MEM-'.$number,
                 'created_by' => $userId,
@@ -123,6 +123,16 @@ class PropertyRegistry
     /** @param array<string, mixed> $attributes */
     public function registerVehicle(Property $property, array $attributes, ?int $userId = null): Vehicle
     {
+        Validator::make($attributes, [
+            'plate_no' => ['required', 'string', 'max:20'],
+            'driver_name' => ['required', 'string', 'max:255'],
+            'type' => ['required', 'string', 'max:100'],
+            'make' => ['required', 'string', 'max:255'],
+            'model' => ['required', 'string', 'max:255'],
+            'color' => ['required', 'string', 'max:255'],
+            'cr_number' => ['required', 'string', 'max:255'],
+        ])->validate();
+
         $plate = strtoupper(preg_replace('/[^A-Z0-9]/i', '', (string) $attributes['plate_no']) ?? '');
 
         if ($plate === '' || Vehicle::query()->where('normalized_plate', $plate)->where('status', 'Active')->exists()) {

@@ -18,7 +18,10 @@ test('gate check returns only allowed vehicle fields and a valid sticker verdict
         'plate_no' => 'ABC 123',
         'driver_name' => 'Maria Santos',
         'type' => 'Car',
+        'make' => 'Toyota',
+        'model' => 'Vios',
         'color' => 'Blue',
+        'cr_number' => 'CR-12345',
     ]);
     $registry->issueSticker($vehicle, 'GM-2026-001', now()->year);
     app(BillingService::class)->createCharge($property, 'Private balance', '98765.43');

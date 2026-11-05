@@ -179,7 +179,7 @@ class OwnerChangeRequestService
             OwnerChangeType::FamilyRemove => ['moved_out_on'],
             OwnerChangeType::HouseStaffAdd, OwnerChangeType::HouseStaffUpdate => ['name', 'role', 'phone', 'id_type', 'id_reference', 'pass_no', 'pass_expires_on', 'started_on'],
             OwnerChangeType::HouseStaffDeactivate => ['ended_on'],
-            OwnerChangeType::VehicleAdd, OwnerChangeType::VehicleUpdate => ['driver_name', 'type', 'make', 'model', 'color', 'plate_no', 'parking'],
+            OwnerChangeType::VehicleAdd, OwnerChangeType::VehicleUpdate => ['driver_name', 'type', 'make', 'model', 'color', 'cr_number', 'plate_no', 'parking'],
             OwnerChangeType::VehicleDeactivate => [],
         };
 

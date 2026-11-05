@@ -82,6 +82,7 @@ new #[Title('Users')] class extends DataTableComponent
         ]);
         $user = User::query()->findOrFail((int) $validated['linkingUserId']);
         $this->authorize('update', $user);
+        abort_unless($user->hasRole(RoleName::Owner), 404);
         $owner = Owner::query()->where('status', 'Current')->whereNull('user_id')->findOrFail((int) $validated['linkOwnerId']);
         $linkOwnerUser->handle($user, $owner, auth()->id());
         $this->reset('linkingUserId', 'linkOwnerId', 'showLinkModal');

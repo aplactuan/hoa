@@ -15,7 +15,7 @@ test('search opens property records and hides owner details from guards', functi
         'ownership_type' => 'Sole Owner',
         'started_on' => now()->toDateString(),
     ]);
-    $registry->registerVehicle($property, ['plate_no' => 'ABC 123', 'driver_name' => 'Maria Santos', 'type' => 'Car']);
+    $registry->registerVehicle($property, ['plate_no' => 'ABC 123', 'driver_name' => 'Maria Santos', 'type' => 'Car', 'make' => 'Toyota', 'model' => 'Vios', 'color' => 'Blue', 'cr_number' => 'CR-12345']);
     $administrator = User::factory()->create();
     $administrator->assignRole(RoleName::Administrator);
     $guard = User::factory()->create();

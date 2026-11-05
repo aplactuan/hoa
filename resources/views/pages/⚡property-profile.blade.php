@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\RecordPropertyOwner;
 use App\Models\AuditLog;
 use App\Models\FamilyMember;
 use App\Models\HouseStaff;
@@ -44,8 +45,12 @@ new #[Title('Property profile')] class extends Component
     public string $renewPassExpiresOn = '';
     public string $staffPassExpiresOn = '';
     public string $plateNo = '';
-    public string $driverName = '';
+    public string $vehicleOwnerName = '';
     public string $vehicleType = 'Car';
+    public string $vehicleMake = '';
+    public string $vehicleModel = '';
+    public string $vehicleColor = '';
+    public string $vehicleCrNumber = '';
     public string $stickerNo = '';
     public int $stickerYear = 0;
     public ?int $stickerVehicleId = null;
@@ -127,20 +132,21 @@ new #[Title('Property profile')] class extends Component
         }
     }
 
-    public function saveOwner(PropertyRegistry $registry): void
+    public function saveOwner(RecordPropertyOwner $recordPropertyOwner): void
     {
         $this->authorize('create', Owner::class);
+        $this->ownerEmail = trim($this->ownerEmail);
         $data = $this->validate([
             'ownerName' => ['required', 'string', 'max:255'],
             'ownerPhone' => ['nullable', 'string', 'max:30'],
-            'ownerEmail' => ['nullable', 'email', 'max:255'],
+            'ownerEmail' => ['required', 'email', 'max:255'],
             'ownerType' => ['required', Rule::in(['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'])],
             'ownerStartedOn' => ['required', 'date'],
         ]);
-        $registry->transferOwnership($this->record, [
+        $recordPropertyOwner->handle($this->record, [
             'name' => $data['ownerName'],
             'phone' => $data['ownerPhone'] ?: null,
-            'email' => $data['ownerEmail'] ?: null,
+            'email' => $data['ownerEmail'],
             'ownership_type' => $data['ownerType'],
             'started_on' => $data['ownerStartedOn'],
         ], auth()->id());
@@ -250,15 +256,23 @@ new #[Title('Property profile')] class extends Component
         $this->authorize('create', Vehicle::class);
         $data = $this->validate([
             'plateNo' => ['required', 'string', 'max:20'],
-            'driverName' => ['required', 'string', 'max:255'],
+            'vehicleOwnerName' => ['required', 'string', 'max:255'],
             'vehicleType' => ['required', Rule::in(['Car', 'SUV', 'Van', 'Pickup', 'Motorcycle'])],
+            'vehicleMake' => ['required', 'string', 'max:255'],
+            'vehicleModel' => ['required', 'string', 'max:255'],
+            'vehicleColor' => ['required', 'string', 'max:255'],
+            'vehicleCrNumber' => ['required', 'string', 'max:255'],
         ]);
         $registry->registerVehicle($this->record, [
             'plate_no' => $data['plateNo'],
-            'driver_name' => $data['driverName'],
+            'driver_name' => $data['vehicleOwnerName'],
             'type' => $data['vehicleType'],
+            'make' => $data['vehicleMake'],
+            'model' => $data['vehicleModel'],
+            'color' => $data['vehicleColor'],
+            'cr_number' => $data['vehicleCrNumber'],
         ], auth()->id());
-        $this->reset(['plateNo', 'driverName']);
+        $this->reset(['plateNo', 'vehicleOwnerName', 'vehicleMake', 'vehicleModel', 'vehicleColor', 'vehicleCrNumber']);
         unset($this->record);
         Flux::toast(variant: 'success', text: __('Vehicle registered.'));
     }
@@ -341,7 +355,7 @@ new #[Title('Property profile')] class extends Component
                 @empty <flux:text>No owners recorded.</flux:text> @endforelse
             </flux:card>
             @can('create', App\Models\Owner::class)
-                <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="Name" wire:model="ownerName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
+                <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="Name" wire:model="ownerName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" required /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
             @endcan
         </div>
     @elseif ($tab === 'Household')
@@ -383,10 +397,10 @@ new #[Title('Property profile')] class extends Component
     @elseif ($tab === 'Vehicles')
         <div class="grid gap-6 lg:grid-cols-2">
             <flux:card class="flex flex-col gap-3"><flux:heading size="lg">Vehicles and stickers</flux:heading>
-                @foreach ($this->record->vehicles as $vehicle)<div wire:key="vehicle-{{ $vehicle->id }}" class="border-t border-zinc-200 py-2 dark:border-zinc-700"><strong>{{ $vehicle->plate_no }}</strong> · {{ $vehicle->type }} · {{ $vehicle->driver_name }} @foreach ($vehicle->stickers as $sticker)<div class="text-sm text-zinc-500">Sticker {{ $sticker->sticker_no }} ({{ $sticker->year }}) · {{ $sticker->status }}</div>@endforeach</div>@endforeach
+                @foreach ($this->record->vehicles as $vehicle)<div wire:key="vehicle-{{ $vehicle->id }}" class="border-t border-zinc-200 py-2 dark:border-zinc-700"><strong>{{ $vehicle->plate_no }}</strong> · {{ $vehicle->type }} · Owner: {{ $vehicle->driver_name }}<div class="text-sm text-zinc-500">{{ $vehicle->make }} {{ $vehicle->model }} · {{ $vehicle->color }} · CR: {{ $vehicle->cr_number }}</div> @foreach ($vehicle->stickers as $sticker)<div class="text-sm text-zinc-500">Sticker {{ $sticker->sticker_no }} ({{ $sticker->year }}) · {{ $sticker->status }}</div>@endforeach</div>@endforeach
             </flux:card>
             @can('create', App\Models\Vehicle::class)
-                <div class="flex flex-col gap-4"><flux:card><form wire:submit="saveVehicle" class="flex flex-col gap-3"><flux:heading size="lg">Register vehicle</flux:heading><flux:input label="Plate" wire:model="plateNo" /><flux:input label="Driver" wire:model="driverName" /><label class="text-sm">Type<select wire:model="vehicleType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Car', 'SUV', 'Van', 'Pickup', 'Motorcycle'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:button type="submit" variant="primary">Register</flux:button></form></flux:card>
+                <div class="flex flex-col gap-4"><flux:card><form wire:submit="saveVehicle" class="flex flex-col gap-3"><flux:heading size="lg">Register vehicle</flux:heading><flux:input label="Plate" wire:model="plateNo" required /><flux:input label="Owner" wire:model="vehicleOwnerName" required /><label class="text-sm">Type<select wire:model="vehicleType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Car', 'SUV', 'Van', 'Pickup', 'Motorcycle'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Make" wire:model="vehicleMake" required /><flux:input label="Model" wire:model="vehicleModel" required /><flux:input label="Color" wire:model="vehicleColor" required /><flux:input label="CR Number" wire:model="vehicleCrNumber" required /><flux:button type="submit" variant="primary">Register</flux:button></form></flux:card>
                 <flux:card><form wire:submit="issueSticker" class="flex flex-col gap-3"><flux:heading size="lg">Issue or renew sticker</flux:heading><label class="text-sm">Vehicle<select wire:model="stickerVehicleId" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select vehicle</option>@foreach ($this->record->vehicles as $vehicle)<option value="{{ $vehicle->id }}">{{ $vehicle->plate_no }}</option>@endforeach</select></label><flux:input label="Sticker number" wire:model="stickerNo" /><flux:input label="Year" type="number" wire:model="stickerYear" /><flux:button type="submit" variant="primary">Issue sticker</flux:button></form></flux:card></div>
             @endcan
         </div>

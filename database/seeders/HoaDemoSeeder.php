@@ -47,6 +47,10 @@ class HoaDemoSeeder extends Seeder
             $vehicle = $registry->registerVehicle($property, [
                 'driver_name' => $owner->name,
                 'type' => 'Car',
+                'make' => 'Toyota',
+                'model' => 'Vios',
+                'color' => 'White',
+                'cr_number' => 'DEMO-CR-'.str_pad((string) $lot, 4, '0', STR_PAD_LEFT),
                 'plate_no' => 'GM '.str_pad((string) $lot, 4, '0', STR_PAD_LEFT),
             ]);
             $registry->issueSticker($vehicle, 'GM-'.now()->year.'-'.str_pad((string) $lot, 3, '0', STR_PAD_LEFT), now()->year);

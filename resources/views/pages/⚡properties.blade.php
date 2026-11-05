@@ -45,6 +45,13 @@ new #[Title('Properties')] class extends Component
         $this->resetPage();
     }
 
+    public function updatedPropertyTypeId(): void
+    {
+        if (! in_array($this->propertyStatus, $this->propertyStatusOptions, true)) {
+            $this->propertyStatus = $this->propertyStatusOptions[0];
+        }
+    }
+
     #[Computed]
     public function properties()
     {
@@ -79,6 +86,16 @@ new #[Title('Properties')] class extends Component
     public function propertyTypes()
     {
         return PropertyType::query()->orderBy('name')->get();
+    }
+
+    #[Computed]
+    public function propertyStatusOptions(): array
+    {
+        return match ($this->propertyTypes->firstWhere('id', (int) $this->propertyTypeId)?->name) {
+            'Lot' => ['Vacant', 'Sta Lucia Owned', 'For Resale'],
+            'House' => ['Underconstruction', 'Occupied'],
+            default => ['Vacant', 'Under Construction', 'For Sale'],
+        };
     }
 
     public function createRecord(): void
@@ -118,7 +135,7 @@ new #[Title('Properties')] class extends Component
             'sectionId' => ['nullable', 'integer', 'exists:sections,id'],
             'propertyTypeId' => ['nullable', 'integer', 'exists:property_types,id'],
             'lotArea' => ['required', 'numeric', 'gt:0', 'max:99999999'],
-            'propertyStatus' => ['required', Rule::in(['Occupied', 'Vacant', 'Under Construction', 'For Sale'])],
+            'propertyStatus' => ['required', Rule::in($this->propertyStatusOptions)],
             'notes' => ['nullable', 'string', 'max:5000'],
         ]);
 
@@ -135,7 +152,10 @@ new #[Title('Properties')] class extends Component
         ];
 
         if ($property) {
-            $property->update($attributes + ['updated_by' => auth()->id()]);
+            $property->update($attributes + [
+                'code' => Property::codeFor((int) $validated['block'], (int) $validated['lot']),
+                'updated_by' => auth()->id(),
+            ]);
         } else {
             $registry->createProperty($attributes, auth()->id());
         }
@@ -174,7 +194,7 @@ new #[Title('Properties')] class extends Component
     <div class="flex flex-wrap gap-3">
         <flux:input wire:model.live.debounce.300ms="search" placeholder="Find code, block or lot" class="max-w-xs" />
         <select wire:model.live="status" class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900">
-            @foreach (['All', 'Occupied', 'Vacant', 'Under Construction', 'For Sale'] as $option)
+            @foreach (['All', 'Vacant', 'Sta Lucia Owned', 'For Resale', 'Underconstruction', 'Occupied', 'Under Construction', 'For Sale'] as $option)
                 <option value="{{ $option }}">{{ $option }}</option>
             @endforeach
         </select>
@@ -207,7 +227,7 @@ new #[Title('Properties')] class extends Component
     </div>
     {{ $this->properties->links() }}
 
-    <flux:modal wire:model.self="showModal" class="max-w-2xl">
+    <flux:modal wire:model.self="showModal" :dismissible="false" class="max-w-2xl">
         <form wire:submit="save" class="flex flex-col gap-4">
             <flux:heading size="lg">{{ $editingId ? 'Edit property' : 'Add property' }}</flux:heading>
             <div class="grid gap-4 sm:grid-cols-2">
@@ -222,10 +242,10 @@ new #[Title('Properties')] class extends Component
                     <select wire:model="streetId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select street</option>@foreach ($this->streets as $street)<option value="{{ $street->id }}">{{ $street->name }}</option>@endforeach</select>
                 </label>
                 <label class="flex flex-col gap-1 text-sm">Type
-                    <select wire:model="propertyTypeId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select type</option>@foreach ($this->propertyTypes as $type)<option value="{{ $type->id }}">{{ $type->name }}</option>@endforeach</select>
+                    <select wire:model.live="propertyTypeId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select type</option>@foreach ($this->propertyTypes as $type)<option value="{{ $type->id }}">{{ $type->name }}</option>@endforeach</select>
                 </label>
                 <label class="flex flex-col gap-1 text-sm">Status
-                    <select wire:model="propertyStatus" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Occupied', 'Vacant', 'Under Construction', 'For Sale'] as $option)<option>{{ $option }}</option>@endforeach</select>
+                    <select wire:model="propertyStatus" wire:key="property-status-{{ $propertyTypeId }}" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach ($this->propertyStatusOptions as $option)<option value="{{ $option }}">{{ $option }}</option>@endforeach</select>
                 </label>
             </div>
             <flux:textarea label="Notes" wire:model="notes" />

@@ -60,6 +60,29 @@ test('an administrator can invite an owner without a 404', function () {
         ->and($owner->fresh()->user_id)->toBe($user->id);
 });
 
+test('the users page only links owner accounts through its manual link action', function () {
+    $this->seed(AccessSeeder::class);
+
+    $admin = User::factory()->create();
+    $admin->assignRole(RoleName::Administrator);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $owner = app(PropertyRegistry::class)->transferOwnership(Property::factory()->create(), [
+        'name' => 'Olivia Owner',
+        'ownership_type' => 'Sole Owner',
+        'started_on' => now()->toDateString(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test('pages::users.index')
+        ->set('linkingUserId', $staff->id)
+        ->set('linkOwnerId', (string) $owner->id)
+        ->call('linkOwner')
+        ->assertNotFound();
+
+    expect($owner->fresh()->user_id)->toBeNull();
+});
+
 test('an invite requires a name', function () {
     $this->seed(AccessSeeder::class);
 

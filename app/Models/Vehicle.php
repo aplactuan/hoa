@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['code', 'property_id', 'driver_name', 'type', 'make', 'model', 'color', 'plate_no', 'normalized_plate', 'parking', 'status', 'remarks', 'created_by', 'updated_by'])]
+#[Fillable(['code', 'property_id', 'driver_name', 'type', 'make', 'model', 'color', 'cr_number', 'plate_no', 'normalized_plate', 'parking', 'status', 'remarks', 'created_by', 'updated_by'])]
 class Vehicle extends Model
 {
     /** @use HasFactory<VehicleFactory> */

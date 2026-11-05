@@ -11,6 +11,7 @@ use App\Models\OwnerChangeRequest;
 use App\Models\Payment;
 use App\Models\Property;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Notifications\OfficeAttention;
 use App\Notifications\SetPassword;
 use App\Services\OwnerChangeRequestService;
@@ -163,6 +164,36 @@ test('an owner cannot add a family member until a current resident exists', func
         ->set('familyRelationship', 'Daughter')
         ->call('submitFamily')
         ->assertHasErrors(['familyName']);
+});
+
+test('an owner submits complete vehicle details for staff approval', function () {
+    Notification::fake();
+    $property = Property::factory()->create();
+    $ownerUser = User::factory()->create();
+    $ownerUser->assignRole(RoleName::Owner);
+    app(LinkOwnerUser::class)->handle($ownerUser, currentOwner($property));
+    $reviewer = User::factory()->create();
+    $reviewer->assignRole(RoleName::OfficeStaff);
+
+    $form = Livewire::actingAs($ownerUser)->test('pages::owner.property')
+        ->set('plateNo', 'ABC 123')
+        ->call('submitVehicle')
+        ->assertHasErrors(['vehicleOwnerName' => 'required', 'vehicleMake' => 'required', 'vehicleModel' => 'required', 'vehicleColor' => 'required', 'vehicleCrNumber' => 'required']);
+
+    $form->set('vehicleOwnerName', 'Maria Santos')
+        ->set('vehicleMake', 'Toyota')
+        ->set('vehicleModel', 'Vios')
+        ->set('vehicleColor', 'Blue')
+        ->set('vehicleCrNumber', 'CR-12345')
+        ->call('submitVehicle')
+        ->assertHasNoErrors();
+
+    $request = OwnerChangeRequest::query()->where('property_id', $property->id)->sole();
+    expect($request->payload['cr_number'])->toBe('CR-12345');
+
+    app(OwnerChangeRequestService::class)->approve($request, $reviewer);
+
+    expect(Vehicle::query()->sole()->cr_number)->toBe('CR-12345');
 });
 
 test('submitting a resident does not validate house staff fields', function () {

@@ -38,11 +38,12 @@ new #[Title('My Property')] class extends OwnerPortalComponent
     public string $staffIdType = '';
     public string $staffIdReference = '';
     public string $plateNo = '';
-    public string $driverName = '';
+    public string $vehicleOwnerName = '';
     public string $vehicleType = 'Car';
     public string $vehicleMake = '';
     public string $vehicleModel = '';
     public string $vehicleColor = '';
+    public string $vehicleCrNumber = '';
     public ?int $targetId = null;
     public string $form = '';
     public $attachment = null;
@@ -133,11 +134,12 @@ new #[Title('My Property')] class extends OwnerPortalComponent
 
         if ($record instanceof Vehicle) {
             $this->plateNo = (string) $record->plate_no;
-            $this->driverName = (string) $record->driver_name;
+            $this->vehicleOwnerName = (string) $record->driver_name;
             $this->vehicleType = (string) $record->type;
             $this->vehicleMake = (string) ($record->make ?? '');
             $this->vehicleModel = (string) ($record->model ?? '');
             $this->vehicleColor = (string) ($record->color ?? '');
+            $this->vehicleCrNumber = (string) ($record->cr_number ?? '');
         }
     }
 
@@ -207,14 +209,16 @@ new #[Title('My Property')] class extends OwnerPortalComponent
     {
         abort_unless($this->selectedProperty, 404);
         $data = $this->validate([
-            'plateNo' => ['required', 'string', 'max:20'], 'driverName' => ['required', 'string', 'max:255'],
+            'plateNo' => ['required', 'string', 'max:20'], 'vehicleOwnerName' => ['required', 'string', 'max:255'],
             'vehicleType' => ['required', Rule::in(['Car', 'SUV', 'Van', 'Pickup', 'Motorcycle'])],
-            'vehicleMake' => ['nullable', 'string', 'max:100'], 'vehicleModel' => ['nullable', 'string', 'max:100'], 'vehicleColor' => ['nullable', 'string', 'max:100'],
+            'vehicleMake' => ['required', 'string', 'max:255'], 'vehicleModel' => ['required', 'string', 'max:255'],
+            'vehicleColor' => ['required', 'string', 'max:255'], 'vehicleCrNumber' => ['required', 'string', 'max:255'],
         ]);
         $target = $this->targetId ? $this->ownedRecord('vehicle', $this->targetId) : null;
         $changes->submit($this->ownerUser(), $this->selectedProperty, $target ? OwnerChangeType::VehicleUpdate : OwnerChangeType::VehicleAdd, [
-            'plate_no' => $data['plateNo'], 'driver_name' => $data['driverName'], 'type' => $data['vehicleType'],
-            'make' => $data['vehicleMake'] ?: null, 'model' => $data['vehicleModel'] ?: null, 'color' => $data['vehicleColor'] ?: null,
+            'plate_no' => $data['plateNo'], 'driver_name' => $data['vehicleOwnerName'], 'type' => $data['vehicleType'],
+            'make' => $data['vehicleMake'], 'model' => $data['vehicleModel'], 'color' => $data['vehicleColor'],
+            'cr_number' => $data['vehicleCrNumber'],
         ], $target);
         $this->saved();
     }
@@ -271,7 +275,7 @@ new #[Title('My Property')] class extends OwnerPortalComponent
             'residentName', 'residentPhone', 'residentEmail',
             'familyName', 'familyRelationship', 'familyPhone', 'familyEmail',
             'staffName', 'staffRole', 'staffPhone', 'staffIdType', 'staffIdReference',
-            'plateNo', 'driverName', 'vehicleMake', 'vehicleModel', 'vehicleColor',
+            'plateNo', 'vehicleOwnerName', 'vehicleMake', 'vehicleModel', 'vehicleColor', 'vehicleCrNumber',
             'targetId', 'form',
         ]);
         $this->residentType = 'Owner-Occupied';
@@ -302,7 +306,7 @@ new #[Title('My Property')] class extends OwnerPortalComponent
                 <flux:card class="space-y-3 xl:col-span-2"><flux:heading size="lg">{{ __('House staff') }}</flux:heading>@foreach ($this->record->houseStaff->where('status', 'Active') as $staff)<div wire:key="owner-staff-{{ $staff->id }}" class="flex justify-between gap-2 border-t py-2"><span>{{ $staff->name }} · {{ $staff->role }} · Pass {{ $staff->pass_no }}</span><span><flux:button size="sm" variant="ghost" wire:click="edit('staff', {{ $staff->id }})">{{ __('Edit') }}</flux:button><flux:button size="sm" variant="ghost" wire:click="deactivate('staff', {{ $staff->id }})">{{ __('Deactivate') }}</flux:button></span></div>@endforeach<form wire:submit="submitStaff" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><flux:input label="{{ __('Name') }}" wire:model="staffName" /><flux:input label="{{ __('Role') }}" wire:model="staffRole" /><flux:input label="{{ __('Phone') }}" wire:model="staffPhone" /><flux:input label="{{ __('ID type') }}" wire:model="staffIdType" /><flux:input label="{{ __('ID reference') }}" wire:model="staffIdReference" /><div class="flex items-end"><flux:button type="submit" variant="primary">{{ __('Submit staff change') }}</flux:button></div></form></flux:card>
             </div>
         @elseif ($tab === 'Vehicles')
-            <div class="grid gap-6 lg:grid-cols-2"><flux:card class="space-y-3"><flux:heading size="lg">{{ __('Vehicles and stickers') }}</flux:heading>@foreach ($this->record->vehicles->where('status', 'Active') as $vehicle)<div wire:key="owner-vehicle-{{ $vehicle->id }}" class="border-t py-3"><div class="flex justify-between gap-2"><strong>{{ $vehicle->plate_no }} · {{ $vehicle->type }}</strong><span><flux:button size="sm" variant="ghost" wire:click="edit('vehicle', {{ $vehicle->id }})">{{ __('Edit') }}</flux:button><flux:button size="sm" variant="ghost" wire:click="deactivate('vehicle', {{ $vehicle->id }})">{{ __('Deactivate') }}</flux:button></span></div><flux:text>{{ $vehicle->driver_name }}</flux:text>@foreach ($vehicle->stickers as $sticker)<flux:text class="text-xs">Sticker {{ $sticker->sticker_no }} ({{ $sticker->year }}) · {{ $sticker->status }}</flux:text>@endforeach</div>@endforeach</flux:card><flux:card><form wire:submit="submitVehicle" class="grid gap-3 sm:grid-cols-2"><div class="sm:col-span-2"><flux:heading size="lg">{{ __('Vehicle change') }}</flux:heading></div><flux:input label="{{ __('Plate number') }}" wire:model="plateNo" /><flux:input label="{{ __('Driver') }}" wire:model="driverName" /><flux:select label="{{ __('Type') }}" wire:model="vehicleType"><flux:select.option value="Car">Car</flux:select.option><flux:select.option value="SUV">SUV</flux:select.option><flux:select.option value="Van">Van</flux:select.option><flux:select.option value="Pickup">Pickup</flux:select.option><flux:select.option value="Motorcycle">Motorcycle</flux:select.option></flux:select><flux:input label="{{ __('Make') }}" wire:model="vehicleMake" /><flux:input label="{{ __('Model') }}" wire:model="vehicleModel" /><flux:input label="{{ __('Color') }}" wire:model="vehicleColor" /><div class="sm:col-span-2"><flux:button type="submit" variant="primary">{{ __('Submit for review') }}</flux:button></div></form></flux:card></div>
+            <div class="grid gap-6 lg:grid-cols-2"><flux:card class="space-y-3"><flux:heading size="lg">{{ __('Vehicles and stickers') }}</flux:heading>@foreach ($this->record->vehicles->where('status', 'Active') as $vehicle)<div wire:key="owner-vehicle-{{ $vehicle->id }}" class="border-t py-3"><div class="flex justify-between gap-2"><strong>{{ $vehicle->plate_no }} · {{ $vehicle->type }}</strong><span><flux:button size="sm" variant="ghost" wire:click="edit('vehicle', {{ $vehicle->id }})">{{ __('Edit') }}</flux:button><flux:button size="sm" variant="ghost" wire:click="deactivate('vehicle', {{ $vehicle->id }})">{{ __('Deactivate') }}</flux:button></span></div><flux:text>Owner: {{ $vehicle->driver_name }}</flux:text><flux:text>{{ $vehicle->make }} {{ $vehicle->model }} · {{ $vehicle->color }} · CR: {{ $vehicle->cr_number }}</flux:text>@foreach ($vehicle->stickers as $sticker)<flux:text class="text-xs">Sticker {{ $sticker->sticker_no }} ({{ $sticker->year }}) · {{ $sticker->status }}</flux:text>@endforeach</div>@endforeach</flux:card><flux:card><form wire:submit="submitVehicle" class="grid gap-3 sm:grid-cols-2"><div class="sm:col-span-2"><flux:heading size="lg">{{ __('Vehicle change') }}</flux:heading></div><flux:input label="{{ __('Plate number') }}" wire:model="plateNo" required /><flux:input label="{{ __('Owner') }}" wire:model="vehicleOwnerName" required /><flux:select label="{{ __('Type') }}" wire:model="vehicleType"><flux:select.option value="Car">Car</flux:select.option><flux:select.option value="SUV">SUV</flux:select.option><flux:select.option value="Van">Van</flux:select.option><flux:select.option value="Pickup">Pickup</flux:select.option><flux:select.option value="Motorcycle">Motorcycle</flux:select.option></flux:select><flux:input label="{{ __('Make') }}" wire:model="vehicleMake" required /><flux:input label="{{ __('Model') }}" wire:model="vehicleModel" required /><flux:input label="{{ __('Color') }}" wire:model="vehicleColor" required /><flux:input label="{{ __('CR Number') }}" wire:model="vehicleCrNumber" required /><div class="sm:col-span-2"><flux:button type="submit" variant="primary">{{ __('Submit for review') }}</flux:button></div></form></flux:card></div>
         @else
             <flux:card class="space-y-4"><div><flux:heading size="lg">{{ __('Private owner documents') }}</flux:heading><flux:text>{{ __('PDF, JPEG, or PNG up to 10 MB. Only you and authorized office staff can access these files.') }}</flux:text></div><form wire:submit="uploadDocument" class="flex flex-wrap items-end gap-3"><flux:input label="{{ __('Document') }}" type="file" wire:model="attachment" accept=".pdf,.jpg,.jpeg,.png" /><flux:button type="submit" variant="primary">{{ __('Upload') }}</flux:button></form>@forelse ($this->linkedOwner?->attachments ?? [] as $document)<div wire:key="owner-document-{{ $document->id }}" class="border-t py-2"><a class="text-emerald-700 hover:underline dark:text-emerald-400" href="{{ route('attachments.download', $document) }}">{{ $document->original_name }}</a></div>@empty<flux:text>{{ __('No private documents uploaded.') }}</flux:text>@endforelse</flux:card>
         @endif

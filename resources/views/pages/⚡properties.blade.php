@@ -24,6 +24,7 @@ new #[Title('Properties')] class extends Component
     public string $block = '';
     public string $lot = '';
     public string $houseNo = '';
+    public string $propertyAddress = '';
     public string $streetId = '';
     public string $sectionId = '';
     public string $propertyTypeId = '';
@@ -121,6 +122,7 @@ new #[Title('Properties')] class extends Component
         $this->block = (string) $property->block;
         $this->lot = (string) $property->lot;
         $this->houseNo = (string) $property->house_no;
+        $this->propertyAddress = (string) $property->property_address;
         $this->streetId = (string) $property->street_id;
         $this->sectionId = (string) $property->section_id;
         $this->propertyTypeId = (string) $property->property_type_id;
@@ -140,6 +142,7 @@ new #[Title('Properties')] class extends Component
             'block' => ['required', 'integer', 'min:1'],
             'lot' => ['required', 'integer', 'min:1', Rule::unique('properties', 'lot')->where('block', $this->block)->ignore($property?->id)],
             'houseNo' => ['nullable', 'string', 'max:50'],
+            'propertyAddress' => ['nullable', 'string', 'max:255'],
             'streetId' => ['nullable', 'integer', 'exists:streets,id'],
             'sectionId' => ['nullable', 'integer', 'exists:sections,id'],
             'propertyTypeId' => ['nullable', 'integer', 'exists:property_types,id'],
@@ -153,6 +156,7 @@ new #[Title('Properties')] class extends Component
             'block' => $validated['block'],
             'lot' => $validated['lot'],
             'house_no' => $validated['houseNo'] ?: null,
+            'property_address' => $validated['propertyAddress'] ?: null,
             'street_id' => $validated['streetId'] ?: null,
             'section_id' => $validated['sectionId'] ?: null,
             'property_type_id' => $validated['propertyTypeId'] ?: null,
@@ -186,7 +190,7 @@ new #[Title('Properties')] class extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['editingId', 'block', 'lot', 'houseNo', 'streetId', 'sectionId', 'propertyTypeId', 'propertyCategoryId', 'lotArea', 'notes']);
+        $this->reset(['editingId', 'block', 'lot', 'houseNo', 'propertyAddress', 'streetId', 'sectionId', 'propertyTypeId', 'propertyCategoryId', 'lotArea', 'notes']);
         $this->propertyStatus = 'Vacant';
         $this->sectionId = (string) Section::query()->where('name', 'Phase 1')->value('id');
         $this->resetValidation();
@@ -221,7 +225,7 @@ new #[Title('Properties')] class extends Component
                 @forelse ($this->properties as $property)
                     <tr wire:key="property-{{ $property->id }}" class="border-t border-zinc-200 dark:border-zinc-700">
                         <td class="p-3"><a class="font-medium text-emerald-700 hover:underline dark:text-emerald-400" href="{{ route('properties.show', $property) }}">{{ $property->code }}</a><div>Block {{ $property->block }} · Lot {{ $property->lot }}</div></td>
-                        <td class="p-3">{{ $property->street?->name ?? '—' }}<div class="text-zinc-500">{{ $property->section?->name }}</div></td>
+                        <td class="p-3">{{ $property->street?->name ?? '—' }}<div class="text-zinc-500">{{ $property->section?->name }}</div>@if ($property->property_address)<div>{{ $property->property_address }}</div>@endif</td>
                         <td class="p-3">{{ $property->propertyCategory?->name ?? '—' }}</td>
                         <td class="p-3">@if (auth()->user()->hasPermission(App\Enums\Permission::OwnersView)) {{ $property->currentOwner?->name ?? '—' }} @else — @endif</td>
                         <td class="p-3">{{ number_format((float) $property->lot_area, 2) }} sqm</td>
@@ -247,6 +251,7 @@ new #[Title('Properties')] class extends Component
                 <flux:input label="Block" type="number" min="1" wire:model="block" />
                 <flux:input label="Lot" type="number" min="1" wire:model="lot" />
                 <flux:input label="House number" wire:model="houseNo" />
+                <flux:input class="sm:col-span-2" label="Property address" wire:model="propertyAddress" />
                 <flux:input label="Lot area (sqm)" type="number" step="0.01" min="0.01" wire:model="lotArea" />
                 <label class="flex flex-col gap-1 text-sm">Section
                     <select wire:model="sectionId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select section</option>@foreach ($this->sections as $section)<option value="{{ $section->id }}">{{ $section->name }}</option>@endforeach</select>

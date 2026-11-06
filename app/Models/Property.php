@@ -14,12 +14,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * @property string $lot_area
+ * @property string|null $property_address
  * @property-read Street|null $street
  * @property-read PropertyCategory|null $propertyCategory
  * @property-read Owner|null $currentOwner
  * @property-read Resident|null $currentResident
  */
-#[Fillable(['code', 'account_no', 'membership_no', 'block', 'lot', 'house_no', 'street_id', 'section_id', 'property_type_id', 'property_category_id', 'lot_area', 'status', 'notes', 'current_owner_id', 'current_resident_id', 'created_by', 'updated_by'])]
+#[Fillable(['code', 'account_no', 'membership_no', 'block', 'lot', 'house_no', 'property_address', 'street_id', 'section_id', 'property_type_id', 'property_category_id', 'lot_area', 'status', 'notes', 'current_owner_id', 'current_resident_id', 'created_by', 'updated_by'])]
 class Property extends Model
 {
     /** @use HasFactory<PropertyFactory> */

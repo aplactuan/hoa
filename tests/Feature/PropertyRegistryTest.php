@@ -121,6 +121,33 @@ test('office staff can save and change a property category', function () {
     expect($property->fresh()->property_category_id)->toBe($commercial->id);
 });
 
+test('a property address is optional and can be cleared', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->set('block', '2')
+        ->set('lot', '8')
+        ->set('lotArea', '125.50')
+        ->set('propertyAddress', '123 Creek Road, Phase 1')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $property = Property::query()->where('block', 2)->where('lot', 8)->sole();
+
+    expect($property->property_address)->toBe('123 Creek Road, Phase 1');
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('edit', $property->id)
+        ->assertSet('propertyAddress', '123 Creek Road, Phase 1')
+        ->set('propertyAddress', '')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($property->fresh()->property_address)->toBeNull();
+});
+
 test('a treasurer cannot create a property through the component action', function () {
     $this->seed(AccessSeeder::class);
     $treasurer = User::factory()->create();

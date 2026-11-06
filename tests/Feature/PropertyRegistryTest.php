@@ -264,7 +264,8 @@ test('ownership transfer preserves former ownership and changes the current owne
         ->and(Owner::query()->where('property_id', $property->id)->count())->toBe(2);
 });
 
-test('recording an owner requires an email', function () {
+test('recording an owner without an email skips invite and account linking', function () {
+    Notification::fake();
     $this->seed(AccessSeeder::class);
     $property = Property::factory()->create();
     $staff = User::factory()->create();
@@ -274,11 +275,18 @@ test('recording an owner requires an email', function () {
         ->set('ownerName', 'Maria Santos')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
-        ->assertHasErrors(['ownerEmail' => 'required']);
+        ->assertHasNoErrors();
 
-    expect($property->fresh()->current_owner_id)->toBeNull()
-        ->and(Owner::query()->count())->toBe(0)
+    $owner = $property->fresh()->currentOwner;
+
+    expect($owner)->not->toBeNull()
+        ->and($owner->name)->toBe('Maria Santos')
+        ->and($owner->email)->toBeNull()
+        ->and($owner->user_id)->toBeNull()
+        ->and($owner->is_registered)->toBeFalse()
         ->and(User::query()->count())->toBe(1);
+
+    Notification::assertNothingSent();
 });
 
 test('recording a new owner creates an account and sends a set-password email', function () {

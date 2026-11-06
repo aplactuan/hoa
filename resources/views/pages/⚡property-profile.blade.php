@@ -139,14 +139,14 @@ new #[Title('Property profile')] class extends Component
         $data = $this->validate([
             'ownerName' => ['required', 'string', 'max:255'],
             'ownerPhone' => ['nullable', 'string', 'max:30'],
-            'ownerEmail' => ['required', 'email', 'max:255'],
+            'ownerEmail' => ['nullable', 'email', 'max:255'],
             'ownerType' => ['required', Rule::in(['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'])],
             'ownerStartedOn' => ['required', 'date'],
         ]);
         $recordPropertyOwner->handle($this->record, [
             'name' => $data['ownerName'],
             'phone' => $data['ownerPhone'] ?: null,
-            'email' => $data['ownerEmail'],
+            'email' => $data['ownerEmail'] ?: null,
             'ownership_type' => $data['ownerType'],
             'started_on' => $data['ownerStartedOn'],
         ], auth()->id());
@@ -355,7 +355,7 @@ new #[Title('Property profile')] class extends Component
                 @empty <flux:text>No owners recorded.</flux:text> @endforelse
             </flux:card>
             @can('create', App\Models\Owner::class)
-                <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="Name" wire:model="ownerName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" required /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
+                <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="Name" wire:model="ownerName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
             @endcan
         </div>
     @elseif ($tab === 'Household')

@@ -1,7 +1,10 @@
 <?php
 
 use App\Enums\RoleName;
+use App\Models\Owner;
 use App\Models\Property;
+use App\Models\PropertyCategory;
+use App\Models\PropertyType;
 use App\Models\Section;
 use App\Models\Street;
 use App\Models\User;
@@ -62,7 +65,7 @@ test('street CSV preview reports an existing street in the same phase', function
 test('property CSV preview reports duplicates and prevents import', function () {
     Property::factory()->create(['block' => 1, 'lot' => 1]);
     $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
-    file_put_contents($path, "block,lot,lot_area,house_no\n1,1,100,12\n1,2,120,13\n");
+    file_put_contents($path, "block,lot,lot_area,house_no,street_name,status,property_type,property_category,property_address,notes\n1,1,100,12,,,,,,\n1,2,120,13,,,,,,\n");
 
     try {
         $service = app(SpreadsheetImport::class);
@@ -73,6 +76,70 @@ test('property CSV preview reports duplicates and prevents import', function () 
             ->and($batch->errors()->sole()->row_number)->toBe(2);
         expect(fn () => $service->commit($batch, $path, null))->toThrow(ValidationException::class);
         expect(Property::query()->count())->toBe(1);
+    } finally {
+        unlink($path);
+    }
+});
+
+test('property import saves the extra columns and creates a missing property type', function () {
+    $lot = PropertyType::factory()->create(['name' => 'Lot']);
+    $creekRoad = Street::factory()->create(['name' => 'Creek Road']);
+    $residential = PropertyCategory::factory()->create(['name' => 'Residential']);
+    $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
+    file_put_contents($path, "block,lot,lot_area,house_no,street_name,status,property_type,property_category,property_address,notes\n2,4,125.50,12,Creek Road,Owned,Lot,Residential,123 Creek Road,Corner lot\n3,5,80,,New Lane,Vacant,Commercial,Mixed Use,,\n4,6,90,,,,,,,\n");
+
+    try {
+        $service = app(SpreadsheetImport::class);
+        $batch = $service->preview('Properties', $path, 'properties.csv', null);
+        expect($batch->error_count)->toBe(0);
+        $service->commit($batch, $path, null);
+
+        $owned = Property::query()->where('block', 2)->where('lot', 4)->sole();
+        $commercialType = PropertyType::query()->where('name', 'Commercial')->sole();
+        $blank = Property::query()->where('block', 4)->where('lot', 6)->sole();
+
+        $newLane = Street::query()->where('name', 'New Lane')->sole();
+        $mixedUse = PropertyCategory::query()->where('name', 'Mixed Use')->sole();
+
+        expect($owned->property_type_id)->toBe($lot->id)
+            ->and($owned->street_id)->toBe($creekRoad->id)
+            ->and($owned->property_category_id)->toBe($residential->id)
+            ->and($owned->status)->toBe('Owned')
+            ->and($owned->property_address)->toBe('123 Creek Road')
+            ->and($owned->notes)->toBe('Corner lot')
+            ->and(PropertyType::query()->where('name', 'Lot')->count())->toBe(1)
+            ->and(Street::query()->where('name', 'Creek Road')->count())->toBe(1)
+            ->and(PropertyCategory::query()->where('name', 'Residential')->count())->toBe(1)
+            ->and($commercialType->is_active)->toBeTrue()
+            ->and($newLane->is_active)->toBeTrue()
+            ->and($newLane->section_id)->toBeNull()
+            ->and($mixedUse->is_active)->toBeTrue()
+            ->and(Property::query()->where('block', 3)->where('lot', 5)->sole()->property_type_id)->toBe($commercialType->id)
+            ->and(Property::query()->where('block', 3)->where('lot', 5)->sole()->street_id)->toBe($newLane->id)
+            ->and(Property::query()->where('block', 3)->where('lot', 5)->sole()->property_category_id)->toBe($mixedUse->id)
+            ->and($blank->status)->toBe('Vacant')
+            ->and($blank->property_type_id)->toBeNull()
+            ->and($blank->street_id)->toBeNull()
+            ->and($blank->property_category_id)->toBeNull()
+            ->and($blank->property_address)->toBeNull()
+            ->and($blank->notes)->toBeNull();
+    } finally {
+        unlink($path);
+    }
+});
+
+test('property import rejects a status that does not match the property type', function () {
+    $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
+    file_put_contents($path, "block,lot,lot_area,house_no,street_name,status,property_type,property_category,property_address,notes\n1,1,100,,,Owned,House,Villa,,\n");
+
+    try {
+        $batch = app(SpreadsheetImport::class)->preview('Properties', $path, 'properties.csv', null);
+
+        expect($batch->error_count)->toBe(1)
+            ->and($batch->row_count)->toBe(0)
+            ->and(Property::query()->count())->toBe(0)
+            ->and(PropertyType::query()->where('name', 'House')->count())->toBe(0)
+            ->and(PropertyCategory::query()->where('name', 'Villa')->count())->toBe(0);
     } finally {
         unlink($path);
     }
@@ -122,6 +189,38 @@ test('vehicle import requires and saves owner and registration details', functio
     }
 });
 
+test('owner import saves first and last name and allows a blank last name', function () {
+    $withLastName = Property::factory()->create();
+    $withoutLastName = Property::factory()->create();
+    $corporate = Property::factory()->create();
+    $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
+    file_put_contents($path, "property_code,first_name,last_name,ownership_type,started_on,phone,email,mailing_address\n{$withLastName->code},Maria,Santos,Sole Owner,2026-01-01,,,123 Creek Road\n{$withoutLastName->code},Juan,,Sole Owner,2026-02-01,,,\n{$corporate->code},Sta Lucia,,Corporate,2026-03-01,,,\n");
+
+    try {
+        $service = app(SpreadsheetImport::class);
+        $batch = $service->preview('Owners', $path, 'owners.csv', null);
+        expect($batch->error_count)->toBe(0);
+        $service->commit($batch, $path, null);
+
+        $maria = Owner::query()->where('property_id', $withLastName->id)->sole();
+        $juan = Owner::query()->where('property_id', $withoutLastName->id)->sole();
+        $staLucia = Owner::query()->where('property_id', $corporate->id)->sole();
+
+        expect($maria->first_name)->toBe('Maria')
+            ->and($maria->last_name)->toBe('Santos')
+            ->and($maria->name)->toBe('Maria Santos')
+            ->and($maria->mailing_address)->toBe('123 Creek Road')
+            ->and($juan->first_name)->toBe('Juan')
+            ->and($juan->last_name)->toBeNull()
+            ->and($juan->name)->toBe('Juan')
+            ->and($juan->mailing_address)->toBeNull()
+            ->and($staLucia->ownership_type)->toBe('Corporate')
+            ->and($staLucia->name)->toBe('Sta Lucia');
+    } finally {
+        unlink($path);
+    }
+});
+
 test('only administrators can open spreadsheet import', function () {
     $this->seed(AccessSeeder::class);
     $administrator = User::factory()->create();
@@ -129,6 +228,9 @@ test('only administrators can open spreadsheet import', function () {
     $guard = User::factory()->create();
     $guard->assignRole(RoleName::SecurityGuard);
 
-    $this->actingAs($administrator)->get(route('imports.index'))->assertOk();
+    $this->actingAs($administrator)->get(route('imports.index'))
+        ->assertOk()
+        ->assertSee('block,lot,lot_area,house_no,street_name,status,property_type,property_category,property_address,notes', false)
+        ->assertSee('property_code,first_name,last_name,ownership_type,started_on,phone,email,mailing_address', false);
     $this->actingAs($guard)->get(route('imports.index'))->assertForbidden();
 });

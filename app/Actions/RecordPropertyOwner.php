@@ -20,11 +20,19 @@ class RecordPropertyOwner
     /** @param array<string, mixed> $attributes */
     public function handle(Property $property, array $attributes, ?int $actorId = null): Owner
     {
-        $email = Str::lower(trim((string) $attributes['email']));
+        $email = filled($attributes['email'] ?? null)
+            ? Str::lower(trim((string) $attributes['email']))
+            : null;
 
         return DB::transaction(function () use ($property, $attributes, $email, $actorId): Owner {
-            $user = User::query()->whereRaw('LOWER(email) = ?', [$email])->lockForUpdate()->first();
+            $user = $email !== null
+                ? User::query()->whereRaw('LOWER(email) = ?', [$email])->lockForUpdate()->first()
+                : null;
             $owner = $this->registry->transferOwnership($property, array_merge($attributes, ['email' => $email]), $actorId);
+
+            if ($email === null) {
+                return $owner;
+            }
 
             if ($user !== null) {
                 return $this->linkOwnerUser->handle($user, $owner, $actorId);

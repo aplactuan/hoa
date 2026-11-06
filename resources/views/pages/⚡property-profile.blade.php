@@ -25,9 +25,11 @@ new #[Title('Property profile')] class extends Component
 
     public Property $property;
     public string $tab = 'Overview';
-    public string $ownerName = '';
+    public string $ownerFirstName = '';
+    public string $ownerLastName = '';
     public string $ownerPhone = '';
     public string $ownerEmail = '';
+    public string $ownerMailingAddress = '';
     public string $ownerType = 'Sole Owner';
     public string $ownerStartedOn = '';
     public string $residentName = '';
@@ -71,7 +73,7 @@ new #[Title('Property profile')] class extends Component
     #[Computed]
     public function record(): Property
     {
-        $relations = ['street', 'section', 'propertyType', 'currentResident', 'residents', 'familyMembers', 'houseStaff', 'vehicles.stickers'];
+        $relations = ['street', 'section', 'propertyType', 'propertyCategory', 'currentResident', 'residents', 'familyMembers', 'houseStaff', 'vehicles.stickers'];
 
         if (auth()->user()->hasPermission(Permission::OwnersView)) {
             $relations[] = 'currentOwner.attachments';
@@ -137,20 +139,24 @@ new #[Title('Property profile')] class extends Component
         $this->authorize('create', Owner::class);
         $this->ownerEmail = trim($this->ownerEmail);
         $data = $this->validate([
-            'ownerName' => ['required', 'string', 'max:255'],
+            'ownerFirstName' => ['required', 'string', 'max:255'],
+            'ownerLastName' => ['nullable', 'string', 'max:255'],
             'ownerPhone' => ['nullable', 'string', 'max:30'],
-            'ownerEmail' => ['required', 'email', 'max:255'],
+            'ownerEmail' => ['nullable', 'email', 'max:255'],
+            'ownerMailingAddress' => ['nullable', 'string', 'max:2000'],
             'ownerType' => ['required', Rule::in(['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'])],
             'ownerStartedOn' => ['required', 'date'],
         ]);
         $recordPropertyOwner->handle($this->record, [
-            'name' => $data['ownerName'],
+            'first_name' => $data['ownerFirstName'],
+            'last_name' => $data['ownerLastName'] ?: null,
             'phone' => $data['ownerPhone'] ?: null,
-            'email' => $data['ownerEmail'],
+            'email' => $data['ownerEmail'] ?: null,
+            'mailing_address' => $data['ownerMailingAddress'] ?: null,
             'ownership_type' => $data['ownerType'],
             'started_on' => $data['ownerStartedOn'],
         ], auth()->id());
-        $this->reset(['ownerName', 'ownerPhone', 'ownerEmail']);
+        $this->reset(['ownerFirstName', 'ownerLastName', 'ownerPhone', 'ownerEmail', 'ownerMailingAddress']);
         unset($this->record);
         Flux::toast(variant: 'success', text: __('Ownership recorded.'));
     }
@@ -336,7 +342,7 @@ new #[Title('Property profile')] class extends Component
 
     @if ($tab === 'Overview')
         <div class="grid gap-4 sm:grid-cols-3">
-            <flux:card><flux:heading size="lg">Property</flux:heading><flux:text>{{ $this->record->status }} · {{ $this->record->lot_area }} sqm</flux:text><flux:text>{{ $this->record->street?->name }} {{ $this->record->section?->name }}</flux:text></flux:card>
+            <flux:card><flux:heading size="lg">Property</flux:heading><flux:text>{{ $this->record->status }} · {{ $this->record->lot_area }} sqm</flux:text><flux:text>{{ $this->record->propertyCategory?->name ?? 'No category' }}</flux:text><flux:text>{{ $this->record->property_address ?: 'No address' }}</flux:text><flux:text>{{ $this->record->street?->name }} {{ $this->record->section?->name }}</flux:text></flux:card>
             @if (auth()->user()->hasPermission(Permission::OwnersView))
                 <flux:card><flux:heading size="lg">Owner</flux:heading><flux:text>{{ $this->record->currentOwner?->name ?? 'No current owner' }}</flux:text></flux:card>
             @endif
@@ -355,7 +361,7 @@ new #[Title('Property profile')] class extends Component
                 @empty <flux:text>No owners recorded.</flux:text> @endforelse
             </flux:card>
             @can('create', App\Models\Owner::class)
-                <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="Name" wire:model="ownerName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" required /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
+                <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="First name" wire:model="ownerFirstName" /><flux:input label="Last name" wire:model="ownerLastName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" /><flux:textarea label="Mailing address" wire:model="ownerMailingAddress" /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
             @endcan
         </div>
     @elseif ($tab === 'Household')

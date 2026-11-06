@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Property;
+use App\Models\PropertyCategory;
 use App\Models\PropertyType;
 use App\Models\Section;
 use App\Models\Street;
@@ -23,9 +24,11 @@ new #[Title('Properties')] class extends Component
     public string $block = '';
     public string $lot = '';
     public string $houseNo = '';
+    public string $propertyAddress = '';
     public string $streetId = '';
     public string $sectionId = '';
     public string $propertyTypeId = '';
+    public string $propertyCategoryId = '';
     public string $lotArea = '';
     public string $propertyStatus = 'Vacant';
     public string $notes = '';
@@ -57,8 +60,8 @@ new #[Title('Properties')] class extends Component
     {
         return Property::query()
             ->with(auth()->user()->hasPermission(App\Enums\Permission::OwnersView)
-                ? ['street', 'section', 'currentOwner']
-                : ['street', 'section'])
+                ? ['street', 'section', 'propertyCategory', 'currentOwner']
+                : ['street', 'section', 'propertyCategory'])
             ->when($this->search !== '', function ($query): void {
                 $query->where(function ($query): void {
                     $query->where('code', 'like', '%'.$this->search.'%')
@@ -89,13 +92,15 @@ new #[Title('Properties')] class extends Component
     }
 
     #[Computed]
+    public function propertyCategories()
+    {
+        return PropertyCategory::query()->orderBy('name')->get();
+    }
+
+    #[Computed]
     public function propertyStatusOptions(): array
     {
-        return match ($this->propertyTypes->firstWhere('id', (int) $this->propertyTypeId)?->name) {
-            'Lot' => ['Vacant', 'Sta Lucia Owned', 'For Resale'],
-            'House' => ['Underconstruction', 'Occupied'],
-            default => ['Vacant', 'Under Construction', 'For Sale'],
-        };
+        return Property::statusesForType($this->propertyTypes->firstWhere('id', (int) $this->propertyTypeId)?->name);
     }
 
     public function createRecord(): void
@@ -113,9 +118,11 @@ new #[Title('Properties')] class extends Component
         $this->block = (string) $property->block;
         $this->lot = (string) $property->lot;
         $this->houseNo = (string) $property->house_no;
+        $this->propertyAddress = (string) $property->property_address;
         $this->streetId = (string) $property->street_id;
         $this->sectionId = (string) $property->section_id;
         $this->propertyTypeId = (string) $property->property_type_id;
+        $this->propertyCategoryId = (string) $property->property_category_id;
         $this->lotArea = (string) $property->lot_area;
         $this->propertyStatus = $property->status;
         $this->notes = (string) $property->notes;
@@ -131,9 +138,11 @@ new #[Title('Properties')] class extends Component
             'block' => ['required', 'integer', 'min:1'],
             'lot' => ['required', 'integer', 'min:1', Rule::unique('properties', 'lot')->where('block', $this->block)->ignore($property?->id)],
             'houseNo' => ['nullable', 'string', 'max:50'],
+            'propertyAddress' => ['nullable', 'string', 'max:255'],
             'streetId' => ['nullable', 'integer', 'exists:streets,id'],
             'sectionId' => ['nullable', 'integer', 'exists:sections,id'],
             'propertyTypeId' => ['nullable', 'integer', 'exists:property_types,id'],
+            'propertyCategoryId' => ['nullable', 'integer', 'exists:property_categories,id'],
             'lotArea' => ['required', 'numeric', 'gt:0', 'max:99999999'],
             'propertyStatus' => ['required', Rule::in($this->propertyStatusOptions)],
             'notes' => ['nullable', 'string', 'max:5000'],
@@ -143,9 +152,11 @@ new #[Title('Properties')] class extends Component
             'block' => $validated['block'],
             'lot' => $validated['lot'],
             'house_no' => $validated['houseNo'] ?: null,
+            'property_address' => $validated['propertyAddress'] ?: null,
             'street_id' => $validated['streetId'] ?: null,
             'section_id' => $validated['sectionId'] ?: null,
             'property_type_id' => $validated['propertyTypeId'] ?: null,
+            'property_category_id' => $validated['propertyCategoryId'] ?: null,
             'lot_area' => $validated['lotArea'],
             'status' => $validated['propertyStatus'],
             'notes' => $validated['notes'] ?: null,
@@ -175,8 +186,9 @@ new #[Title('Properties')] class extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['editingId', 'block', 'lot', 'houseNo', 'streetId', 'sectionId', 'propertyTypeId', 'lotArea', 'notes']);
+        $this->reset(['editingId', 'block', 'lot', 'houseNo', 'propertyAddress', 'streetId', 'sectionId', 'propertyTypeId', 'propertyCategoryId', 'lotArea', 'notes']);
         $this->propertyStatus = 'Vacant';
+        $this->sectionId = (string) Section::query()->where('name', 'Phase 1')->value('id');
         $this->resetValidation();
     }
 };
@@ -194,7 +206,7 @@ new #[Title('Properties')] class extends Component
     <div class="flex flex-wrap gap-3">
         <flux:input wire:model.live.debounce.300ms="search" placeholder="Find code, block or lot" class="max-w-xs" />
         <select wire:model.live="status" class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900">
-            @foreach (['All', 'Vacant', 'Sta Lucia Owned', 'For Resale', 'Underconstruction', 'Occupied', 'Under Construction', 'For Sale'] as $option)
+            @foreach (['All', 'Vacant', 'Owned', 'Sta Lucia Owned', 'For Resale', 'Underconstruction', 'Occupied', 'Under Construction', 'For Sale'] as $option)
                 <option value="{{ $option }}">{{ $option }}</option>
             @endforeach
         </select>
@@ -203,13 +215,14 @@ new #[Title('Properties')] class extends Component
     <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-700">
         <table class="w-full text-left text-sm">
             <thead class="bg-zinc-50 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                <tr><th class="p-3">Property</th><th class="p-3">Location</th><th class="p-3">Current owner</th><th class="p-3">Area</th><th class="p-3">Status</th><th class="p-3"></th></tr>
+                <tr><th class="p-3">Property</th><th class="p-3">Location</th><th class="p-3">Category</th><th class="p-3">Current owner</th><th class="p-3">Area</th><th class="p-3">Status</th><th class="p-3"></th></tr>
             </thead>
             <tbody>
                 @forelse ($this->properties as $property)
                     <tr wire:key="property-{{ $property->id }}" class="border-t border-zinc-200 dark:border-zinc-700">
                         <td class="p-3"><a class="font-medium text-emerald-700 hover:underline dark:text-emerald-400" href="{{ route('properties.show', $property) }}">{{ $property->code }}</a><div>Block {{ $property->block }} · Lot {{ $property->lot }}</div></td>
-                        <td class="p-3">{{ $property->street?->name ?? '—' }}<div class="text-zinc-500">{{ $property->section?->name }}</div></td>
+                        <td class="p-3">{{ $property->street?->name ?? '—' }}<div class="text-zinc-500">{{ $property->section?->name }}</div>@if ($property->property_address)<div>{{ $property->property_address }}</div>@endif</td>
+                        <td class="p-3">{{ $property->propertyCategory?->name ?? '—' }}</td>
                         <td class="p-3">@if (auth()->user()->hasPermission(App\Enums\Permission::OwnersView)) {{ $property->currentOwner?->name ?? '—' }} @else — @endif</td>
                         <td class="p-3">{{ number_format((float) $property->lot_area, 2) }} sqm</td>
                         <td class="p-3"><x-status-pill :label="$property->status" /></td>
@@ -220,7 +233,7 @@ new #[Title('Properties')] class extends Component
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="6" class="p-6 text-center text-zinc-500">No properties found.</td></tr>
+                    <tr><td colspan="7" class="p-6 text-center text-zinc-500">No properties found.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -234,6 +247,7 @@ new #[Title('Properties')] class extends Component
                 <flux:input label="Block" type="number" min="1" wire:model="block" />
                 <flux:input label="Lot" type="number" min="1" wire:model="lot" />
                 <flux:input label="House number" wire:model="houseNo" />
+                <flux:input class="sm:col-span-2" label="Property address" wire:model="propertyAddress" />
                 <flux:input label="Lot area (sqm)" type="number" step="0.01" min="0.01" wire:model="lotArea" />
                 <label class="flex flex-col gap-1 text-sm">Section
                     <select wire:model="sectionId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select section</option>@foreach ($this->sections as $section)<option value="{{ $section->id }}">{{ $section->name }}</option>@endforeach</select>
@@ -243,6 +257,9 @@ new #[Title('Properties')] class extends Component
                 </label>
                 <label class="flex flex-col gap-1 text-sm">Type
                     <select wire:model.live="propertyTypeId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select type</option>@foreach ($this->propertyTypes as $type)<option value="{{ $type->id }}">{{ $type->name }}</option>@endforeach</select>
+                </label>
+                <label class="flex flex-col gap-1 text-sm">Category
+                    <select wire:model="propertyCategoryId" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900"><option value="">Select category</option>@foreach ($this->propertyCategories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select>
                 </label>
                 <label class="flex flex-col gap-1 text-sm">Status
                     <select wire:model="propertyStatus" wire:key="property-status-{{ $propertyTypeId }}" class="rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach ($this->propertyStatusOptions as $option)<option value="{{ $option }}">{{ $option }}</option>@endforeach</select>

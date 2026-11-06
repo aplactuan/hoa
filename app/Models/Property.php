@@ -14,11 +14,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * @property string $lot_area
+ * @property string|null $property_address
  * @property-read Street|null $street
+ * @property-read PropertyCategory|null $propertyCategory
  * @property-read Owner|null $currentOwner
  * @property-read Resident|null $currentResident
  */
-#[Fillable(['code', 'account_no', 'membership_no', 'block', 'lot', 'house_no', 'street_id', 'section_id', 'property_type_id', 'lot_area', 'status', 'notes', 'current_owner_id', 'current_resident_id', 'created_by', 'updated_by'])]
+#[Fillable(['code', 'account_no', 'membership_no', 'block', 'lot', 'house_no', 'property_address', 'street_id', 'section_id', 'property_type_id', 'property_category_id', 'lot_area', 'status', 'notes', 'current_owner_id', 'current_resident_id', 'created_by', 'updated_by'])]
 class Property extends Model
 {
     /** @use HasFactory<PropertyFactory> */
@@ -27,6 +29,18 @@ class Property extends Model
     public static function codeFor(int $block, int $lot): string
     {
         return 'B'.$block.'L'.$lot;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function statusesForType(?string $typeName): array
+    {
+        return match ($typeName) {
+            'Lot' => ['Vacant', 'Owned', 'Sta Lucia Owned', 'For Resale'],
+            'House' => ['Underconstruction', 'Occupied'],
+            default => ['Vacant', 'Under Construction', 'For Sale'],
+        };
     }
 
     protected function casts(): array
@@ -56,6 +70,14 @@ class Property extends Model
     public function propertyType(): BelongsTo
     {
         return $this->belongsTo(PropertyType::class);
+    }
+
+    /**
+     * @return BelongsTo<PropertyCategory, $this>
+     */
+    public function propertyCategory(): BelongsTo
+    {
+        return $this->belongsTo(PropertyCategory::class);
     }
 
     /**

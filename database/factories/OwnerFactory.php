@@ -18,10 +18,15 @@ class OwnerFactory extends Factory
      */
     public function definition(): array
     {
+        $firstName = $this->faker->firstName();
+        $lastName = $this->faker->lastName();
+
         return [
             'code' => $this->faker->unique()->numerify('OWN-####'),
             'property_id' => Property::factory(),
-            'name' => $this->faker->name(),
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'name' => Owner::displayName($firstName, $lastName),
             'ownership_type' => 'Sole Owner',
             'started_on' => now()->toDateString(),
             'status' => 'Current',

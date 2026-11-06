@@ -5,8 +5,10 @@ use App\Models\AuditLog;
 use App\Models\HouseStaff;
 use App\Models\Owner;
 use App\Models\Property;
+use App\Models\PropertyCategory;
 use App\Models\PropertyType;
 use App\Models\Resident;
+use App\Models\Section;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Notifications\SetPassword;
@@ -71,6 +73,81 @@ test('a duplicate block and lot is rejected', function () {
     expect(Property::query()->count())->toBe(1);
 });
 
+test('adding a property defaults the section to phase 1', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $phaseOne = Section::factory()->create(['name' => 'Phase 1']);
+    Section::factory()->create(['name' => 'Phase 2']);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('createRecord')
+        ->assertSet('sectionId', (string) $phaseOne->id)
+        ->set('block', '2')
+        ->set('lot', '4')
+        ->set('lotArea', '125.50')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Property::query()->sole()->section_id)->toBe($phaseOne->id);
+});
+
+test('office staff can save and change a property category', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $residential = PropertyCategory::factory()->create(['name' => 'Residential']);
+    $commercial = PropertyCategory::factory()->create(['name' => 'Commercial']);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->set('block', '2')
+        ->set('lot', '4')
+        ->set('lotArea', '125.50')
+        ->set('propertyCategoryId', (string) $residential->id)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $property = Property::query()->sole();
+
+    expect($property->property_category_id)->toBe($residential->id);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('edit', $property->id)
+        ->assertSet('propertyCategoryId', (string) $residential->id)
+        ->set('propertyCategoryId', (string) $commercial->id)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($property->fresh()->property_category_id)->toBe($commercial->id);
+});
+
+test('a property address is optional and can be cleared', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->set('block', '2')
+        ->set('lot', '8')
+        ->set('lotArea', '125.50')
+        ->set('propertyAddress', '123 Creek Road, Phase 1')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $property = Property::query()->where('block', 2)->where('lot', 8)->sole();
+
+    expect($property->property_address)->toBe('123 Creek Road, Phase 1');
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('edit', $property->id)
+        ->assertSet('propertyAddress', '123 Creek Road, Phase 1')
+        ->set('propertyAddress', '')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($property->fresh()->property_address)->toBeNull();
+});
+
 test('a treasurer cannot create a property through the component action', function () {
     $this->seed(AccessSeeder::class);
     $treasurer = User::factory()->create();
@@ -116,7 +193,7 @@ test('property status options follow the selected type', function (string $typeN
 
     expect($options[1])->toBe($expectedOptions);
 })->with([
-    'lot' => ['Lot', ['Vacant', 'Sta Lucia Owned', 'For Resale'], 'Vacant'],
+    'lot' => ['Lot', ['Vacant', 'Owned', 'Sta Lucia Owned', 'For Resale'], 'Vacant'],
     'house' => ['House', ['Underconstruction', 'Occupied'], 'Underconstruction'],
     'other type' => ['Townhouse', ['Vacant', 'Under Construction', 'For Sale'], 'Vacant'],
 ]);
@@ -139,11 +216,30 @@ test('property save accepts a status for its type and rejects one from another t
 
     expect(Property::query()->count())->toBe(0);
 
-    $form->set('propertyStatus', 'For Resale')
+    $form->set('propertyStatus', 'Owned')
         ->call('save')
         ->assertHasNoErrors();
 
-    expect(Property::query()->sole()->status)->toBe('For Resale');
+    expect(Property::query()->sole()->status)->toBe('Owned');
+});
+
+test('owned status is rejected when the property type is not a lot', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $type = PropertyType::factory()->create(['name' => 'House']);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('createRecord')
+        ->set('block', '2')
+        ->set('lot', '4')
+        ->set('lotArea', '125.50')
+        ->set('propertyTypeId', (string) $type->id)
+        ->set('propertyStatus', 'Owned')
+        ->call('save')
+        ->assertHasErrors(['propertyStatus' => 'in']);
+
+    expect(Property::query()->count())->toBe(0);
 });
 
 test('ownership transfer preserves former ownership and changes the current owner atomically', function () {
@@ -168,21 +264,58 @@ test('ownership transfer preserves former ownership and changes the current owne
         ->and(Owner::query()->where('property_id', $property->id)->count())->toBe(2);
 });
 
-test('recording an owner requires an email', function () {
+test('recording an owner requires a first name and allows a blank last name', function () {
     $this->seed(AccessSeeder::class);
     $property = Property::factory()->create();
     $staff = User::factory()->create();
     $staff->assignRole(RoleName::OfficeStaff);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
-        ->assertHasErrors(['ownerEmail' => 'required']);
+        ->assertHasErrors(['ownerFirstName' => 'required']);
 
-    expect($property->fresh()->current_owner_id)->toBeNull()
-        ->and(Owner::query()->count())->toBe(0)
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', '')
+        ->set('ownerMailingAddress', '123 Creek Road')
+        ->set('ownerStartedOn', '2026-01-01')
+        ->call('saveOwner')
+        ->assertHasNoErrors();
+
+    $owner = $property->fresh()->currentOwner;
+
+    expect($owner->first_name)->toBe('Maria')
+        ->and($owner->last_name)->toBeNull()
+        ->and($owner->name)->toBe('Maria')
+        ->and($owner->mailing_address)->toBe('123 Creek Road');
+});
+
+test('recording an owner without an email skips invite and account linking', function () {
+    Notification::fake();
+    $this->seed(AccessSeeder::class);
+    $property = Property::factory()->create();
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerStartedOn', '2026-01-01')
+        ->call('saveOwner')
+        ->assertHasNoErrors();
+
+    $owner = $property->fresh()->currentOwner;
+
+    expect($owner)->not->toBeNull()
+        ->and($owner->first_name)->toBe('Maria')
+        ->and($owner->last_name)->toBeNull()
+        ->and($owner->name)->toBe('Maria')
+        ->and($owner->email)->toBeNull()
+        ->and($owner->user_id)->toBeNull()
+        ->and($owner->is_registered)->toBeFalse()
         ->and(User::query()->count())->toBe(1);
+
+    Notification::assertNothingSent();
 });
 
 test('recording a new owner creates an account and sends a set-password email', function () {
@@ -193,7 +326,8 @@ test('recording a new owner creates an account and sends a set-password email', 
     $staff->assignRole(RoleName::OfficeStaff);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', 'Santos')
         ->set('ownerEmail', ' Maria.Santos@Example.Test ')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
@@ -203,6 +337,9 @@ test('recording a new owner creates an account and sends a set-password email', 
     $owner = $property->fresh()->currentOwner;
 
     expect($user->hasRole(RoleName::Owner))->toBeTrue()
+        ->and($owner->first_name)->toBe('Maria')
+        ->and($owner->last_name)->toBe('Santos')
+        ->and($owner->name)->toBe('Maria Santos')
         ->and($owner->user_id)->toBe($user->id)
         ->and($owner->email)->toBe($user->email)
         ->and($owner->is_registered)->toBeTrue()
@@ -226,7 +363,8 @@ test('transferring ownership links an existing email without replacing its role 
     $existingUser->assignRole(RoleName::Administrator);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', 'Santos')
         ->set('ownerEmail', 'maria.santos@example.test')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
@@ -236,6 +374,8 @@ test('transferring ownership links an existing email without replacing its role 
 
     expect($firstOwner->fresh()->status)->toBe('Former')
         ->and($currentOwner->name)->toBe('Maria Santos')
+        ->and($currentOwner->first_name)->toBe('Maria')
+        ->and($currentOwner->last_name)->toBe('Santos')
         ->and($currentOwner->user_id)->toBe($existingUser->id)
         ->and($existingUser->fresh()->hasRole(RoleName::Administrator))->toBeTrue()
         ->and($existingUser->fresh()->hasRole(RoleName::Owner))->toBeFalse()
@@ -271,7 +411,8 @@ test('property profile records a transfer and masks ownership and money from the
     $guard->assignRole(RoleName::SecurityGuard);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', 'Santos')
         ->set('ownerEmail', 'maria.santos@example.test')
         ->set('ownerType', 'Sole Owner')
         ->set('ownerStartedOn', '2026-01-01')

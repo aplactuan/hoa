@@ -100,11 +100,7 @@ new #[Title('Properties')] class extends Component
     #[Computed]
     public function propertyStatusOptions(): array
     {
-        return match ($this->propertyTypes->firstWhere('id', (int) $this->propertyTypeId)?->name) {
-            'Lot' => ['Vacant', 'Sta Lucia Owned', 'For Resale'],
-            'House' => ['Underconstruction', 'Occupied'],
-            default => ['Vacant', 'Under Construction', 'For Sale'],
-        };
+        return Property::statusesForType($this->propertyTypes->firstWhere('id', (int) $this->propertyTypeId)?->name);
     }
 
     public function createRecord(): void
@@ -210,7 +206,7 @@ new #[Title('Properties')] class extends Component
     <div class="flex flex-wrap gap-3">
         <flux:input wire:model.live.debounce.300ms="search" placeholder="Find code, block or lot" class="max-w-xs" />
         <select wire:model.live="status" class="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900">
-            @foreach (['All', 'Vacant', 'Sta Lucia Owned', 'For Resale', 'Underconstruction', 'Occupied', 'Under Construction', 'For Sale'] as $option)
+            @foreach (['All', 'Vacant', 'Owned', 'Sta Lucia Owned', 'For Resale', 'Underconstruction', 'Occupied', 'Under Construction', 'For Sale'] as $option)
                 <option value="{{ $option }}">{{ $option }}</option>
             @endforeach
         </select>

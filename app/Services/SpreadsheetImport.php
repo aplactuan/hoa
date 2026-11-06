@@ -4,12 +4,15 @@ namespace App\Services;
 
 use App\Models\ImportBatch;
 use App\Models\Property;
+use App\Models\PropertyCategory;
+use App\Models\PropertyType;
 use App\Models\Section;
 use App\Models\Street;
 use App\Models\Vehicle;
 use App\Support\BillingMath;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class SpreadsheetImport
@@ -21,7 +24,7 @@ class SpreadsheetImport
     {
         return [
             'Streets and Phases' => ['street_name', 'phase'],
-            'Properties' => ['block', 'lot', 'lot_area', 'house_no'],
+            'Properties' => ['block', 'lot', 'lot_area', 'house_no', 'street_name', 'status', 'property_type', 'property_category', 'property_address', 'notes'],
             'Owners' => ['property_code', 'name', 'ownership_type', 'started_on', 'phone', 'email'],
             'Residents' => ['property_code', 'name', 'occupancy_type', 'moved_in_on', 'phone'],
             'Vehicles' => ['property_code', 'owner_name', 'type', 'plate_no', 'make', 'model', 'color', 'cr_number'],
@@ -122,7 +125,7 @@ class SpreadsheetImport
                 }
 
                 $data = array_combine($headers, array_map(fn ($value): string => trim((string) $value), $values));
-                $validator = Validator::make($data, $this->rules($source));
+                $validator = Validator::make($data, $this->rules($source, $data));
 
                 if ($validator->fails()) {
                     $errors[] = ['row_number' => $number, 'message' => $validator->errors()->first()];
@@ -159,12 +162,26 @@ class SpreadsheetImport
         }
     }
 
-    /** @return array<string, list<string>> */
-    private function rules(string $source): array
+    /**
+     * @param  array<string, string>  $data
+     * @return array<string, list<mixed>>
+     */
+    private function rules(string $source, array $data = []): array
     {
         return match ($source) {
             'Streets and Phases' => ['street_name' => ['required', 'string', 'max:255'], 'phase' => ['required', 'string', 'max:255']],
-            'Properties' => ['block' => ['required', 'integer', 'min:1'], 'lot' => ['required', 'integer', 'min:1'], 'lot_area' => ['required', 'numeric', 'gt:0'], 'house_no' => ['nullable', 'string', 'max:100']],
+            'Properties' => [
+                'block' => ['required', 'integer', 'min:1'],
+                'lot' => ['required', 'integer', 'min:1'],
+                'lot_area' => ['required', 'numeric', 'gt:0'],
+                'house_no' => ['nullable', 'string', 'max:100'],
+                'street_name' => ['nullable', 'string', 'max:255'],
+                'status' => ['nullable', 'string', Rule::in(Property::statusesForType($data['property_type'] ?? ''))],
+                'property_type' => ['nullable', 'string', 'max:255'],
+                'property_category' => ['nullable', 'string', 'max:255'],
+                'property_address' => ['nullable', 'string', 'max:255'],
+                'notes' => ['nullable', 'string', 'max:5000'],
+            ],
             'Owners' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'ownership_type' => ['required', 'in:Sole Owner,Co-Owner'], 'started_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100'], 'email' => ['nullable', 'email']],
             'Residents' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'occupancy_type' => ['required', 'in:Owner,Tenant,Caretaker'], 'moved_in_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100']],
             'Vehicles' => ['property_code' => ['required', 'exists:properties,code'], 'owner_name' => ['required', 'string', 'max:255'], 'type' => ['required', 'string', 'max:100'], 'plate_no' => ['required', 'string', 'max:20'], 'make' => ['required', 'string', 'max:255'], 'model' => ['required', 'string', 'max:255'], 'color' => ['required', 'string', 'max:255'], 'cr_number' => ['required', 'string', 'max:255']],
@@ -208,7 +225,28 @@ class SpreadsheetImport
         }
 
         if ($source === 'Properties') {
-            $this->registry->createProperty(['block' => $data['block'], 'lot' => $data['lot'], 'lot_area' => $data['lot_area'], 'house_no' => $data['house_no'] ?: null], $userId);
+            $type = $data['property_type'] !== ''
+                ? PropertyType::query()->firstOrCreate(['name' => $data['property_type']], ['is_active' => true])
+                : null;
+            $street = $data['street_name'] !== ''
+                ? Street::query()->firstOrCreate(['name' => $data['street_name']], ['is_active' => true])
+                : null;
+            $category = $data['property_category'] !== ''
+                ? PropertyCategory::query()->firstOrCreate(['name' => $data['property_category']], ['is_active' => true])
+                : null;
+
+            $this->registry->createProperty([
+                'block' => $data['block'],
+                'lot' => $data['lot'],
+                'lot_area' => $data['lot_area'],
+                'house_no' => $data['house_no'] ?: null,
+                'street_id' => $street?->id,
+                'status' => $data['status'] !== '' ? $data['status'] : 'Vacant',
+                'property_type_id' => $type?->id,
+                'property_category_id' => $category?->id,
+                'property_address' => $data['property_address'] ?: null,
+                'notes' => $data['notes'] ?: null,
+            ], $userId);
 
             return 0;
         }

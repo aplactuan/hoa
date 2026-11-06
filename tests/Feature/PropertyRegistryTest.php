@@ -193,7 +193,7 @@ test('property status options follow the selected type', function (string $typeN
 
     expect($options[1])->toBe($expectedOptions);
 })->with([
-    'lot' => ['Lot', ['Vacant', 'Sta Lucia Owned', 'For Resale'], 'Vacant'],
+    'lot' => ['Lot', ['Vacant', 'Owned', 'Sta Lucia Owned', 'For Resale'], 'Vacant'],
     'house' => ['House', ['Underconstruction', 'Occupied'], 'Underconstruction'],
     'other type' => ['Townhouse', ['Vacant', 'Under Construction', 'For Sale'], 'Vacant'],
 ]);
@@ -216,11 +216,30 @@ test('property save accepts a status for its type and rejects one from another t
 
     expect(Property::query()->count())->toBe(0);
 
-    $form->set('propertyStatus', 'For Resale')
+    $form->set('propertyStatus', 'Owned')
         ->call('save')
         ->assertHasNoErrors();
 
-    expect(Property::query()->sole()->status)->toBe('For Resale');
+    expect(Property::query()->sole()->status)->toBe('Owned');
+});
+
+test('owned status is rejected when the property type is not a lot', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $type = PropertyType::factory()->create(['name' => 'House']);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('createRecord')
+        ->set('block', '2')
+        ->set('lot', '4')
+        ->set('lotArea', '125.50')
+        ->set('propertyTypeId', (string) $type->id)
+        ->set('propertyStatus', 'Owned')
+        ->call('save')
+        ->assertHasErrors(['propertyStatus' => 'in']);
+
+    expect(Property::query()->count())->toBe(0);
 });
 
 test('ownership transfer preserves former ownership and changes the current owner atomically', function () {

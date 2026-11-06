@@ -31,6 +31,18 @@ class Property extends Model
         return 'B'.$block.'L'.$lot;
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function statusesForType(?string $typeName): array
+    {
+        return match ($typeName) {
+            'Lot' => ['Vacant', 'Owned', 'Sta Lucia Owned', 'For Resale'],
+            'House' => ['Underconstruction', 'Occupied'],
+            default => ['Vacant', 'Under Construction', 'For Sale'],
+        };
+    }
+
     protected function casts(): array
     {
         return ['lot_area' => 'decimal:2'];

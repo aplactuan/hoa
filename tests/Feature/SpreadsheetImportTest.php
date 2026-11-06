@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\RoleName;
+use App\Models\Owner;
 use App\Models\Property;
 use App\Models\PropertyCategory;
 use App\Models\PropertyType;
@@ -188,6 +189,34 @@ test('vehicle import requires and saves owner and registration details', functio
     }
 });
 
+test('owner import saves first and last name and allows a blank last name', function () {
+    $withLastName = Property::factory()->create();
+    $withoutLastName = Property::factory()->create();
+    $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
+    file_put_contents($path, "property_code,first_name,last_name,ownership_type,started_on,phone,email,mailing_address\n{$withLastName->code},Maria,Santos,Sole Owner,2026-01-01,,,123 Creek Road\n{$withoutLastName->code},Juan,,Sole Owner,2026-02-01,,,\n");
+
+    try {
+        $service = app(SpreadsheetImport::class);
+        $batch = $service->preview('Owners', $path, 'owners.csv', null);
+        expect($batch->error_count)->toBe(0);
+        $service->commit($batch, $path, null);
+
+        $maria = Owner::query()->where('property_id', $withLastName->id)->sole();
+        $juan = Owner::query()->where('property_id', $withoutLastName->id)->sole();
+
+        expect($maria->first_name)->toBe('Maria')
+            ->and($maria->last_name)->toBe('Santos')
+            ->and($maria->name)->toBe('Maria Santos')
+            ->and($maria->mailing_address)->toBe('123 Creek Road')
+            ->and($juan->first_name)->toBe('Juan')
+            ->and($juan->last_name)->toBeNull()
+            ->and($juan->name)->toBe('Juan')
+            ->and($juan->mailing_address)->toBeNull();
+    } finally {
+        unlink($path);
+    }
+});
+
 test('only administrators can open spreadsheet import', function () {
     $this->seed(AccessSeeder::class);
     $administrator = User::factory()->create();
@@ -197,6 +226,7 @@ test('only administrators can open spreadsheet import', function () {
 
     $this->actingAs($administrator)->get(route('imports.index'))
         ->assertOk()
-        ->assertSee('block,lot,lot_area,house_no,street_name,status,property_type,property_category,property_address,notes', false);
+        ->assertSee('block,lot,lot_area,house_no,street_name,status,property_type,property_category,property_address,notes', false)
+        ->assertSee('property_code,first_name,last_name,ownership_type,started_on,phone,email,mailing_address', false);
     $this->actingAs($guard)->get(route('imports.index'))->assertForbidden();
 });

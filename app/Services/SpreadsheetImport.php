@@ -25,7 +25,7 @@ class SpreadsheetImport
         return [
             'Streets and Phases' => ['street_name', 'phase'],
             'Properties' => ['block', 'lot', 'lot_area', 'house_no', 'street_name', 'status', 'property_type', 'property_category', 'property_address', 'notes'],
-            'Owners' => ['property_code', 'name', 'ownership_type', 'started_on', 'phone', 'email'],
+            'Owners' => ['property_code', 'first_name', 'last_name', 'ownership_type', 'started_on', 'phone', 'email', 'mailing_address'],
             'Residents' => ['property_code', 'name', 'occupancy_type', 'moved_in_on', 'phone'],
             'Vehicles' => ['property_code', 'owner_name', 'type', 'plate_no', 'make', 'model', 'color', 'cr_number'],
             'Opening Balances' => ['account_no', 'amount', 'as_of'],
@@ -139,6 +139,7 @@ class SpreadsheetImport
                     'Vehicles' => strtoupper(preg_replace('/[^A-Z0-9]/i', '', $data['plate_no']) ?? ''),
                     'Opening Balances' => $data['account_no'],
                     'Residents' => $data['property_code'],
+                    'Owners' => $data['property_code'].'-'.$data['first_name'].'-'.$data['last_name'],
                     default => $data['property_code'].'-'.$data['name'],
                 };
 
@@ -182,7 +183,16 @@ class SpreadsheetImport
                 'property_address' => ['nullable', 'string', 'max:255'],
                 'notes' => ['nullable', 'string', 'max:5000'],
             ],
-            'Owners' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'ownership_type' => ['required', 'in:Sole Owner,Co-Owner'], 'started_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100'], 'email' => ['nullable', 'email']],
+            'Owners' => [
+                'property_code' => ['required', 'exists:properties,code'],
+                'first_name' => ['required', 'string', 'max:255'],
+                'last_name' => ['nullable', 'string', 'max:255'],
+                'ownership_type' => ['required', 'in:Sole Owner,Co-Owner'],
+                'started_on' => ['required', 'date_format:Y-m-d'],
+                'phone' => ['nullable', 'string', 'max:100'],
+                'email' => ['nullable', 'email'],
+                'mailing_address' => ['nullable', 'string', 'max:2000'],
+            ],
             'Residents' => ['property_code' => ['required', 'exists:properties,code'], 'name' => ['required', 'string', 'max:255'], 'occupancy_type' => ['required', 'in:Owner,Tenant,Caretaker'], 'moved_in_on' => ['required', 'date_format:Y-m-d'], 'phone' => ['nullable', 'string', 'max:100']],
             'Vehicles' => ['property_code' => ['required', 'exists:properties,code'], 'owner_name' => ['required', 'string', 'max:255'], 'type' => ['required', 'string', 'max:100'], 'plate_no' => ['required', 'string', 'max:20'], 'make' => ['required', 'string', 'max:255'], 'model' => ['required', 'string', 'max:255'], 'color' => ['required', 'string', 'max:255'], 'cr_number' => ['required', 'string', 'max:255']],
             default => ['account_no' => ['required', 'exists:properties,account_no'], 'amount' => ['required', 'numeric', 'min:0'], 'as_of' => ['required', 'date_format:Y-m-d']],
@@ -254,7 +264,15 @@ class SpreadsheetImport
         $property = Property::query()->where($source === 'Opening Balances' ? 'account_no' : 'code', $data[$source === 'Opening Balances' ? 'account_no' : 'property_code'])->firstOrFail();
 
         if ($source === 'Owners') {
-            $this->registry->transferOwnership($property, ['name' => $data['name'], 'ownership_type' => $data['ownership_type'], 'started_on' => $data['started_on'], 'phone' => $data['phone'] ?: null, 'email' => $data['email'] ?: null], $userId);
+            $this->registry->transferOwnership($property, [
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'] !== '' ? $data['last_name'] : null,
+                'ownership_type' => $data['ownership_type'],
+                'started_on' => $data['started_on'],
+                'phone' => $data['phone'] ?: null,
+                'email' => $data['email'] ?: null,
+                'mailing_address' => $data['mailing_address'] !== '' ? $data['mailing_address'] : null,
+            ], $userId);
         } elseif ($source === 'Residents') {
             $this->registry->moveIn($property, ['name' => $data['name'], 'occupancy_type' => $data['occupancy_type'], 'moved_in_on' => $data['moved_in_on'], 'phone' => $data['phone'] ?: null], $userId);
         } elseif ($source === 'Vehicles') {

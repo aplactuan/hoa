@@ -39,6 +39,7 @@ class PropertyRegistry
             $startedOn = (string) $attributes['started_on'];
             $currentOwners = $property->owners()->where('status', 'Current')->lockForUpdate()->get();
             $isCoOwner = ($attributes['ownership_type'] ?? 'Sole Owner') === 'Co-Owner';
+            $attributes = $this->normalizeOwnerNameAttributes($attributes);
 
             if ($isCoOwner && $currentOwners->contains(fn (Owner $owner): bool => $owner->ownership_type !== 'Co-Owner')) {
                 throw ValidationException::withMessages(['ownership_type' => 'All current owners must be co-owners.']);
@@ -65,6 +66,30 @@ class PropertyRegistry
 
             return $owner;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function normalizeOwnerNameAttributes(array $attributes): array
+    {
+        $firstName = trim((string) ($attributes['first_name'] ?? ''));
+        $lastName = filled($attributes['last_name'] ?? null) ? trim((string) $attributes['last_name']) : null;
+
+        if ($firstName === '') {
+            $firstName = trim((string) ($attributes['name'] ?? ''));
+        }
+
+        if ($firstName === '') {
+            throw ValidationException::withMessages(['first_name' => 'The first name field is required.']);
+        }
+
+        $attributes['first_name'] = $firstName;
+        $attributes['last_name'] = $lastName;
+        $attributes['name'] = Owner::displayName($firstName, $lastName);
+
+        return $attributes;
     }
 
     /** @param array<string, mixed> $attributes */

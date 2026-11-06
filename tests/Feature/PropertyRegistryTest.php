@@ -264,6 +264,33 @@ test('ownership transfer preserves former ownership and changes the current owne
         ->and(Owner::query()->where('property_id', $property->id)->count())->toBe(2);
 });
 
+test('recording an owner requires a first name and allows a blank last name', function () {
+    $this->seed(AccessSeeder::class);
+    $property = Property::factory()->create();
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
+        ->set('ownerStartedOn', '2026-01-01')
+        ->call('saveOwner')
+        ->assertHasErrors(['ownerFirstName' => 'required']);
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', '')
+        ->set('ownerMailingAddress', '123 Creek Road')
+        ->set('ownerStartedOn', '2026-01-01')
+        ->call('saveOwner')
+        ->assertHasNoErrors();
+
+    $owner = $property->fresh()->currentOwner;
+
+    expect($owner->first_name)->toBe('Maria')
+        ->and($owner->last_name)->toBeNull()
+        ->and($owner->name)->toBe('Maria')
+        ->and($owner->mailing_address)->toBe('123 Creek Road');
+});
+
 test('recording an owner without an email skips invite and account linking', function () {
     Notification::fake();
     $this->seed(AccessSeeder::class);
@@ -272,7 +299,7 @@ test('recording an owner without an email skips invite and account linking', fun
     $staff->assignRole(RoleName::OfficeStaff);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
         ->assertHasNoErrors();
@@ -280,7 +307,9 @@ test('recording an owner without an email skips invite and account linking', fun
     $owner = $property->fresh()->currentOwner;
 
     expect($owner)->not->toBeNull()
-        ->and($owner->name)->toBe('Maria Santos')
+        ->and($owner->first_name)->toBe('Maria')
+        ->and($owner->last_name)->toBeNull()
+        ->and($owner->name)->toBe('Maria')
         ->and($owner->email)->toBeNull()
         ->and($owner->user_id)->toBeNull()
         ->and($owner->is_registered)->toBeFalse()
@@ -297,7 +326,8 @@ test('recording a new owner creates an account and sends a set-password email', 
     $staff->assignRole(RoleName::OfficeStaff);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', 'Santos')
         ->set('ownerEmail', ' Maria.Santos@Example.Test ')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
@@ -307,6 +337,9 @@ test('recording a new owner creates an account and sends a set-password email', 
     $owner = $property->fresh()->currentOwner;
 
     expect($user->hasRole(RoleName::Owner))->toBeTrue()
+        ->and($owner->first_name)->toBe('Maria')
+        ->and($owner->last_name)->toBe('Santos')
+        ->and($owner->name)->toBe('Maria Santos')
         ->and($owner->user_id)->toBe($user->id)
         ->and($owner->email)->toBe($user->email)
         ->and($owner->is_registered)->toBeTrue()
@@ -330,7 +363,8 @@ test('transferring ownership links an existing email without replacing its role 
     $existingUser->assignRole(RoleName::Administrator);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', 'Santos')
         ->set('ownerEmail', 'maria.santos@example.test')
         ->set('ownerStartedOn', '2026-01-01')
         ->call('saveOwner')
@@ -340,6 +374,8 @@ test('transferring ownership links an existing email without replacing its role 
 
     expect($firstOwner->fresh()->status)->toBe('Former')
         ->and($currentOwner->name)->toBe('Maria Santos')
+        ->and($currentOwner->first_name)->toBe('Maria')
+        ->and($currentOwner->last_name)->toBe('Santos')
         ->and($currentOwner->user_id)->toBe($existingUser->id)
         ->and($existingUser->fresh()->hasRole(RoleName::Administrator))->toBeTrue()
         ->and($existingUser->fresh()->hasRole(RoleName::Owner))->toBeFalse()
@@ -375,7 +411,8 @@ test('property profile records a transfer and masks ownership and money from the
     $guard->assignRole(RoleName::SecurityGuard);
 
     Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property])
-        ->set('ownerName', 'Maria Santos')
+        ->set('ownerFirstName', 'Maria')
+        ->set('ownerLastName', 'Santos')
         ->set('ownerEmail', 'maria.santos@example.test')
         ->set('ownerType', 'Sole Owner')
         ->set('ownerStartedOn', '2026-01-01')

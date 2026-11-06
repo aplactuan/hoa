@@ -187,7 +187,7 @@ class SpreadsheetImport
                 'property_code' => ['required', 'exists:properties,code'],
                 'first_name' => ['required', 'string', 'max:255'],
                 'last_name' => ['nullable', 'string', 'max:255'],
-                'ownership_type' => ['required', 'in:Sole Owner,Co-Owner'],
+                'ownership_type' => ['required', 'in:Sole Owner,Co-Owner,Corporate,Heirs/Estate'],
                 'started_on' => ['required', 'date_format:Y-m-d'],
                 'phone' => ['nullable', 'string', 'max:100'],
                 'email' => ['nullable', 'email'],

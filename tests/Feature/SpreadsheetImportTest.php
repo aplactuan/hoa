@@ -192,8 +192,9 @@ test('vehicle import requires and saves owner and registration details', functio
 test('owner import saves first and last name and allows a blank last name', function () {
     $withLastName = Property::factory()->create();
     $withoutLastName = Property::factory()->create();
+    $corporate = Property::factory()->create();
     $path = tempnam(sys_get_temp_dir(), 'hoa-import-');
-    file_put_contents($path, "property_code,first_name,last_name,ownership_type,started_on,phone,email,mailing_address\n{$withLastName->code},Maria,Santos,Sole Owner,2026-01-01,,,123 Creek Road\n{$withoutLastName->code},Juan,,Sole Owner,2026-02-01,,,\n");
+    file_put_contents($path, "property_code,first_name,last_name,ownership_type,started_on,phone,email,mailing_address\n{$withLastName->code},Maria,Santos,Sole Owner,2026-01-01,,,123 Creek Road\n{$withoutLastName->code},Juan,,Sole Owner,2026-02-01,,,\n{$corporate->code},Sta Lucia,,Corporate,2026-03-01,,,\n");
 
     try {
         $service = app(SpreadsheetImport::class);
@@ -203,6 +204,7 @@ test('owner import saves first and last name and allows a blank last name', func
 
         $maria = Owner::query()->where('property_id', $withLastName->id)->sole();
         $juan = Owner::query()->where('property_id', $withoutLastName->id)->sole();
+        $staLucia = Owner::query()->where('property_id', $corporate->id)->sole();
 
         expect($maria->first_name)->toBe('Maria')
             ->and($maria->last_name)->toBe('Santos')
@@ -211,7 +213,9 @@ test('owner import saves first and last name and allows a blank last name', func
             ->and($juan->first_name)->toBe('Juan')
             ->and($juan->last_name)->toBeNull()
             ->and($juan->name)->toBe('Juan')
-            ->and($juan->mailing_address)->toBeNull();
+            ->and($juan->mailing_address)->toBeNull()
+            ->and($staLucia->ownership_type)->toBe('Corporate')
+            ->and($staLucia->name)->toBe('Sta Lucia');
     } finally {
         unlink($path);
     }

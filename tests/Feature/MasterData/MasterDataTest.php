@@ -3,6 +3,7 @@
 use App\Enums\RoleName;
 use App\Models\Attachment;
 use App\Models\AuditLog;
+use App\Models\PropertyCategory;
 use App\Models\Section;
 use App\Models\Street;
 use App\Models\User;
@@ -31,6 +32,28 @@ test('an administrator can add a lookup and the create is audited', function () 
             ->where('action', 'create')
             ->exists()
     )->toBeTrue();
+});
+
+test('an administrator can add and rename a property category', function () {
+    $this->seed(AccessSeeder::class);
+    $admin = User::factory()->create();
+    $admin->assignRole(RoleName::Administrator);
+
+    $page = Livewire::actingAs($admin)
+        ->test('pages::master-data')
+        ->call('showCatalog', 'property-categories')
+        ->set('name', 'Residential')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $category = PropertyCategory::query()->where('name', 'Residential')->sole();
+
+    $page->call('edit', $category->id)
+        ->set('name', 'Commercial')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($category->fresh()->name)->toBe('Commercial');
 });
 
 test('a lookup name is required', function () {

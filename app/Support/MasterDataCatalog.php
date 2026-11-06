@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\ChargeType;
 use App\Models\Facility;
+use App\Models\PropertyCategory;
 use App\Models\PropertyType;
 use App\Models\RequestCategory;
 use App\Models\Section;
@@ -33,6 +34,11 @@ class MasterDataCatalog
             'property-types' => [
                 'label' => 'Property types',
                 'model' => PropertyType::class,
+                'fields' => [],
+            ],
+            'property-categories' => [
+                'label' => 'Property categories',
+                'model' => PropertyCategory::class,
                 'fields' => [],
             ],
             'transaction-types' => [

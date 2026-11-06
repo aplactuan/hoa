@@ -5,6 +5,7 @@ use App\Models\AuditLog;
 use App\Models\HouseStaff;
 use App\Models\Owner;
 use App\Models\Property;
+use App\Models\PropertyCategory;
 use App\Models\PropertyType;
 use App\Models\Resident;
 use App\Models\Section;
@@ -89,6 +90,35 @@ test('adding a property defaults the section to phase 1', function () {
         ->assertHasNoErrors();
 
     expect(Property::query()->sole()->section_id)->toBe($phaseOne->id);
+});
+
+test('office staff can save and change a property category', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $residential = PropertyCategory::factory()->create(['name' => 'Residential']);
+    $commercial = PropertyCategory::factory()->create(['name' => 'Commercial']);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->set('block', '2')
+        ->set('lot', '4')
+        ->set('lotArea', '125.50')
+        ->set('propertyCategoryId', (string) $residential->id)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $property = Property::query()->sole();
+
+    expect($property->property_category_id)->toBe($residential->id);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('edit', $property->id)
+        ->assertSet('propertyCategoryId', (string) $residential->id)
+        ->set('propertyCategoryId', (string) $commercial->id)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($property->fresh()->property_category_id)->toBe($commercial->id);
 });
 
 test('a treasurer cannot create a property through the component action', function () {

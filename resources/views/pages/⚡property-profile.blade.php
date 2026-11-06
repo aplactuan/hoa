@@ -71,7 +71,7 @@ new #[Title('Property profile')] class extends Component
     #[Computed]
     public function record(): Property
     {
-        $relations = ['street', 'section', 'propertyType', 'currentResident', 'residents', 'familyMembers', 'houseStaff', 'vehicles.stickers'];
+        $relations = ['street', 'section', 'propertyType', 'propertyCategory', 'currentResident', 'residents', 'familyMembers', 'houseStaff', 'vehicles.stickers'];
 
         if (auth()->user()->hasPermission(Permission::OwnersView)) {
             $relations[] = 'currentOwner.attachments';
@@ -336,7 +336,7 @@ new #[Title('Property profile')] class extends Component
 
     @if ($tab === 'Overview')
         <div class="grid gap-4 sm:grid-cols-3">
-            <flux:card><flux:heading size="lg">Property</flux:heading><flux:text>{{ $this->record->status }} · {{ $this->record->lot_area }} sqm</flux:text><flux:text>{{ $this->record->street?->name }} {{ $this->record->section?->name }}</flux:text></flux:card>
+            <flux:card><flux:heading size="lg">Property</flux:heading><flux:text>{{ $this->record->status }} · {{ $this->record->lot_area }} sqm</flux:text><flux:text>{{ $this->record->propertyCategory?->name ?? 'No category' }}</flux:text><flux:text>{{ $this->record->street?->name }} {{ $this->record->section?->name }}</flux:text></flux:card>
             @if (auth()->user()->hasPermission(Permission::OwnersView))
                 <flux:card><flux:heading size="lg">Owner</flux:heading><flux:text>{{ $this->record->currentOwner?->name ?? 'No current owner' }}</flux:text></flux:card>
             @endif

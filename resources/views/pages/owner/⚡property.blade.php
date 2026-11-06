@@ -69,7 +69,7 @@ new #[Title('My Property')] class extends OwnerPortalComponent
     {
         return $this->selectedProperty
             ? $this->ownerUser()->currentOwnedProperties()->with([
-                'street', 'section', 'propertyType', 'currentResident',
+                'street', 'section', 'propertyType', 'propertyCategory', 'currentResident',
                 'residents', 'familyMembers', 'houseStaff', 'vehicles.stickers',
             ])->findOrFail($this->selectedProperty->id)
             : null;
@@ -293,7 +293,7 @@ new #[Title('My Property')] class extends OwnerPortalComponent
         <x-owner-property-selector :properties="$this->ownedProperties" :selected="$selectedPropertyId" />
         <div class="grid gap-4 sm:grid-cols-3">
             <flux:card><flux:text>{{ __('Property') }}</flux:text><flux:heading size="lg">{{ $this->record->code }}</flux:heading><flux:text>Block {{ $this->record->block }}, Lot {{ $this->record->lot }}</flux:text></flux:card>
-            <flux:card><flux:text>{{ __('Area') }}</flux:text><flux:heading size="lg">{{ $this->record->lot_area }} sqm</flux:heading><flux:text>{{ $this->record->propertyType?->name }}</flux:text></flux:card>
+            <flux:card><flux:text>{{ __('Area') }}</flux:text><flux:heading size="lg">{{ $this->record->lot_area }} sqm</flux:heading><flux:text>{{ $this->record->propertyType?->name }}{{ $this->record->propertyCategory ? ' · '.$this->record->propertyCategory->name : '' }}</flux:text></flux:card>
             <flux:card><flux:text>{{ __('Address') }}</flux:text><flux:heading size="lg">{{ $this->record->house_no ?: '—' }}</flux:heading><flux:text>{{ $this->record->street?->name }} · {{ $this->record->section?->name }}</flux:text></flux:card>
         </div>
         <flux:card><form wire:submit="submitContact" class="grid gap-3 sm:grid-cols-2"><div class="sm:col-span-2"><flux:heading size="lg">{{ __('Owner contact details') }}</flux:heading></div><flux:input label="{{ __('Phone') }}" wire:model="phone" /><flux:input label="{{ __('Email') }}" type="email" wire:model="email" /><flux:textarea class="sm:col-span-2" label="{{ __('Mailing address') }}" wire:model="mailingAddress" /><div class="sm:col-span-2"><flux:button type="submit" variant="primary">{{ __('Submit contact update') }}</flux:button></div></form></flux:card>

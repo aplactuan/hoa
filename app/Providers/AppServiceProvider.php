@@ -7,6 +7,7 @@ use App\Models\ChargeType;
 use App\Models\Facility;
 use App\Models\FamilyMember;
 use App\Models\HouseStaff;
+use App\Models\PropertyCategory;
 use App\Models\PropertyType;
 use App\Models\RequestCategory;
 use App\Models\Resident;
@@ -88,6 +89,7 @@ class AppServiceProvider extends ServiceProvider
             Section::class,
             Street::class,
             PropertyType::class,
+            PropertyCategory::class,
             TransactionType::class,
             ChargeType::class,
             ViolationType::class,

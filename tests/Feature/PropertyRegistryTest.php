@@ -7,6 +7,7 @@ use App\Models\Owner;
 use App\Models\Property;
 use App\Models\PropertyType;
 use App\Models\Resident;
+use App\Models\Section;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Notifications\SetPassword;
@@ -69,6 +70,25 @@ test('a duplicate block and lot is rejected', function () {
         ->assertHasErrors('lot');
 
     expect(Property::query()->count())->toBe(1);
+});
+
+test('adding a property defaults the section to phase 1', function () {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+    $phaseOne = Section::factory()->create(['name' => 'Phase 1']);
+    Section::factory()->create(['name' => 'Phase 2']);
+
+    Livewire::actingAs($staff)->test('pages::properties')
+        ->call('createRecord')
+        ->assertSet('sectionId', (string) $phaseOne->id)
+        ->set('block', '2')
+        ->set('lot', '4')
+        ->set('lotArea', '125.50')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Property::query()->sole()->section_id)->toBe($phaseOne->id);
 });
 
 test('a treasurer cannot create a property through the component action', function () {

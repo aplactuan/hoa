@@ -177,6 +177,7 @@ new #[Title('Properties')] class extends Component
     {
         $this->reset(['editingId', 'block', 'lot', 'houseNo', 'streetId', 'sectionId', 'propertyTypeId', 'lotArea', 'notes']);
         $this->propertyStatus = 'Vacant';
+        $this->sectionId = (string) Section::query()->where('name', 'Phase 1')->value('id');
         $this->resetValidation();
     }
 };

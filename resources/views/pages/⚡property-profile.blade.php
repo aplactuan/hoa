@@ -73,10 +73,20 @@ new #[Title('Property profile')] class extends Component
     #[Computed]
     public function record(): Property
     {
-        $relations = ['street', 'section', 'propertyType', 'propertyCategory', 'currentResident', 'residents', 'familyMembers', 'houseStaff', 'vehicles.stickers'];
+        $relations = [
+            'street',
+            'section',
+            'propertyType',
+            'propertyCategory',
+            'currentResident',
+            'residents',
+            'familyMembers',
+            'houseStaff',
+            'vehicles.stickers',
+            auth()->user()->hasPermission(Permission::OwnersView) ? 'currentOwner.attachments' : 'currentOwner',
+        ];
 
         if (auth()->user()->hasPermission(Permission::OwnersView)) {
-            $relations[] = 'currentOwner.attachments';
             $relations['owners'] = fn ($query) => $query->orderByDesc('started_on');
         }
 
@@ -111,7 +121,15 @@ new #[Title('Property profile')] class extends Component
 
     public function showTab(string $tab): void
     {
-        $allowed = ['Overview', 'Household', 'Vehicles'];
+        $allowed = ['Overview'];
+
+        if ($this->record->showsHousehold()) {
+            $allowed[] = 'Household';
+        }
+
+        if ($this->record->showsVehicles()) {
+            $allowed[] = 'Vehicles';
+        }
 
         if (auth()->user()->hasPermission(Permission::OwnersView)) {
             $allowed[] = 'Ownership';
@@ -158,6 +176,11 @@ new #[Title('Property profile')] class extends Component
         ], auth()->id());
         $this->reset(['ownerFirstName', 'ownerLastName', 'ownerPhone', 'ownerEmail', 'ownerMailingAddress']);
         unset($this->record);
+
+        if ($this->tab === 'Household' && ! $this->record->showsHousehold()) {
+            $this->tab = 'Overview';
+        }
+
         Flux::toast(variant: 'success', text: __('Ownership recorded.'));
     }
 
@@ -334,7 +357,7 @@ new #[Title('Property profile')] class extends Component
 
     <div class="flex flex-wrap gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-700">
         @foreach (['Overview', 'Ownership', 'Household', 'Vehicles', 'Billing', 'Office', 'Audit trail'] as $section)
-            @if (($section === 'Ownership' && auth()->user()->hasPermission(Permission::OwnersView)) || ($section === 'Billing' && auth()->user()->hasPermission(Permission::FinancialView)) || ($section === 'Office' && auth()->user()->hasPermission(Permission::TransactionsView)) || ($section === 'Audit trail' && auth()->user()->hasPermission(Permission::AuditView)) || in_array($section, ['Overview', 'Household', 'Vehicles']))
+            @if (($section === 'Ownership' && auth()->user()->hasPermission(Permission::OwnersView)) || ($section === 'Billing' && auth()->user()->hasPermission(Permission::FinancialView)) || ($section === 'Office' && auth()->user()->hasPermission(Permission::TransactionsView)) || ($section === 'Audit trail' && auth()->user()->hasPermission(Permission::AuditView)) || ($section === 'Household' && $this->record->showsHousehold()) || ($section === 'Vehicles' && $this->record->showsVehicles()) || $section === 'Overview')
                 <flux:button wire:key="tab-{{ $section }}" size="sm" :variant="$tab === $section ? 'primary' : 'ghost'" wire:click="showTab('{{ $section }}')">{{ $section }}</flux:button>
             @endif
         @endforeach
@@ -364,7 +387,7 @@ new #[Title('Property profile')] class extends Component
                 <flux:card><form wire:submit="saveOwner" class="flex flex-col gap-3"><flux:heading size="lg">Record owner or transfer</flux:heading><flux:input label="First name" wire:model="ownerFirstName" /><flux:input label="Last name" wire:model="ownerLastName" /><flux:input label="Phone" wire:model="ownerPhone" /><flux:input label="Email" type="email" wire:model="ownerEmail" /><flux:textarea label="Mailing address" wire:model="ownerMailingAddress" /><label class="text-sm">Ownership type<select wire:model="ownerType" class="block w-full rounded-lg border border-zinc-300 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">@foreach (['Sole Owner', 'Co-Owner', 'Corporate', 'Heirs/Estate'] as $type)<option>{{ $type }}</option>@endforeach</select></label><flux:input label="Start or transfer date" type="date" wire:model="ownerStartedOn" /><flux:button type="submit" variant="primary">Record ownership</flux:button></form></flux:card>
             @endcan
         </div>
-    @elseif ($tab === 'Household')
+    @elseif ($tab === 'Household' && $this->record->showsHousehold())
         <div class="grid gap-6 lg:grid-cols-2">
             <flux:card class="flex flex-col gap-3"><flux:heading size="lg">Residents</flux:heading>
                 @foreach ($this->record->residents as $resident)<div wire:key="resident-{{ $resident->id }}">{{ $resident->name }} · {{ $resident->status }} · {{ $resident->occupancy_type }}</div>@endforeach
@@ -400,7 +423,7 @@ new #[Title('Property profile')] class extends Component
                 @endforeach
             </flux:card>
         @endif
-    @elseif ($tab === 'Vehicles')
+    @elseif ($tab === 'Vehicles' && $this->record->showsVehicles())
         <div class="grid gap-6 lg:grid-cols-2">
             <flux:card class="flex flex-col gap-3"><flux:heading size="lg">Vehicles and stickers</flux:heading>
                 @foreach ($this->record->vehicles as $vehicle)<div wire:key="vehicle-{{ $vehicle->id }}" class="border-t border-zinc-200 py-2 dark:border-zinc-700"><strong>{{ $vehicle->plate_no }}</strong> · {{ $vehicle->type }} · Owner: {{ $vehicle->driver_name }}<div class="text-sm text-zinc-500">{{ $vehicle->make }} {{ $vehicle->model }} · {{ $vehicle->color }} · CR: {{ $vehicle->cr_number }}</div> @foreach ($vehicle->stickers as $sticker)<div class="text-sm text-zinc-500">Sticker {{ $sticker->sticker_no }} ({{ $sticker->year }}) · {{ $sticker->status }}</div>@endforeach</div>@endforeach

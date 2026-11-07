@@ -43,6 +43,24 @@ class Property extends Model
         };
     }
 
+    public function showsHousehold(): bool
+    {
+        if ($this->propertyType?->name === 'Lot') {
+            return false;
+        }
+
+        if ($this->currentOwner?->ownership_type === 'Corporate') {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function showsVehicles(): bool
+    {
+        return $this->propertyType?->name !== 'Lot';
+    }
+
     protected function casts(): array
     {
         return ['lot_area' => 'decimal:2'];

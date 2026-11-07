@@ -495,3 +495,73 @@ test('office staff can renew an active house staff pass', function () {
 
     expect($staff->fresh()->pass_expires_on->toDateString())->toBe(now()->addYear()->toDateString());
 });
+
+test('property profile hides the household tab for lots and corporate ownership', function (string $case) {
+    $this->seed(AccessSeeder::class);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    if ($case === 'lot') {
+        $type = PropertyType::factory()->create(['name' => 'Lot']);
+        $property = Property::factory()->create(['property_type_id' => $type->id]);
+    } else {
+        $type = PropertyType::factory()->create(['name' => 'House']);
+        $property = Property::factory()->create(['property_type_id' => $type->id]);
+        $owner = Owner::factory()->create([
+            'property_id' => $property->id,
+            'ownership_type' => 'Corporate',
+            'status' => 'Current',
+        ]);
+        $property->update(['current_owner_id' => $owner->id]);
+    }
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property->fresh()])
+        ->assertDontSee('wire:click="showTab(\'Household\')"', false)
+        ->call('showTab', 'Household')
+        ->assertSet('tab', 'Overview');
+})->with(['lot', 'corporate']);
+
+test('property profile shows the household tab for non-lot properties without corporate ownership', function () {
+    $this->seed(AccessSeeder::class);
+    $type = PropertyType::factory()->create(['name' => 'House']);
+    $property = Property::factory()->create(['property_type_id' => $type->id]);
+    $owner = Owner::factory()->create([
+        'property_id' => $property->id,
+        'ownership_type' => 'Sole Owner',
+        'status' => 'Current',
+    ]);
+    $property->update(['current_owner_id' => $owner->id]);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property->fresh()])
+        ->call('showTab', 'Household')
+        ->assertSet('tab', 'Household')
+        ->assertSee('Residents');
+});
+
+test('property profile hides the vehicles tab for lots', function () {
+    $this->seed(AccessSeeder::class);
+    $type = PropertyType::factory()->create(['name' => 'Lot']);
+    $property = Property::factory()->create(['property_type_id' => $type->id]);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property->fresh()])
+        ->assertDontSee('wire:click="showTab(\'Vehicles\')"', false)
+        ->call('showTab', 'Vehicles')
+        ->assertSet('tab', 'Overview');
+});
+
+test('property profile shows the vehicles tab for non-lot properties', function () {
+    $this->seed(AccessSeeder::class);
+    $type = PropertyType::factory()->create(['name' => 'House']);
+    $property = Property::factory()->create(['property_type_id' => $type->id]);
+    $staff = User::factory()->create();
+    $staff->assignRole(RoleName::OfficeStaff);
+
+    Livewire::actingAs($staff)->test('pages::property-profile', ['property' => $property->fresh()])
+        ->call('showTab', 'Vehicles')
+        ->assertSet('tab', 'Vehicles')
+        ->assertSee('Vehicles and stickers');
+});

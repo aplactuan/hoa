@@ -2,23 +2,37 @@
 
 namespace App\Services;
 
+use App\Enums\PenaltyType;
 use App\Enums\RoleName;
+use App\Models\AdvancePaymentEnrollment;
 use App\Models\BillingPeriod;
 use App\Models\Charge;
 use App\Models\DuesStatement;
+use App\Models\MonthlyFeeRate;
 use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Setting;
 use App\Models\StatementAdjustment;
 use App\Support\BillingMath;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class BillingService
 {
-    public function __construct(private DisplayCode $codes, private AccountService $accounts, private OfficeAlerts $alerts) {}
+    public function __construct(
+        private DisplayCode $codes,
+        private AccountService $accounts,
+        private OfficeAlerts $alerts,
+        private OwnerAccounts $owners,
+        private AccountRecalculator $recalculator,
+    ) {}
 
+    /**
+     * Bill every property for a month. The flat monthly fee is charged once per owner, on the owner's billing property.
+     */
     public function generatePeriod(int $year, int $month, ?int $userId = null): int
     {
         if ($year < 2000 || $year > 2100 || $month < 1 || $month > 12) {
@@ -30,37 +44,50 @@ class BillingService
             ['generated_at' => now(), 'generated_by' => $userId],
         );
         $settings = Setting::current();
-        $count = 0;
+        $monthlyFee = MonthlyFeeRate::amountFor($year, $month);
+        $dueMonth = CarbonImmutable::create($year, $month, 1)->addMonthNoOverflow();
+        $dueOn = $dueMonth->day(min($settings->due_day, $dueMonth->daysInMonth))->toDateString();
         $periodCode = sprintf('%04d%02d', $year, $month);
+        $penaltyRate = $settings->penalty_type === PenaltyType::Fixed ? $settings->penalty_fixed_amount : $settings->penalty_percent;
+        $count = 0;
 
-        Property::query()->orderBy('id')->chunkById(100, function ($properties) use ($period, $settings, $periodCode, $year, $month, $userId, &$count): void {
-            foreach ($properties as $property) {
-                DB::transaction(function () use ($period, $settings, $periodCode, $year, $month, $userId, $property, &$count): void {
+        foreach ($this->owners->allGroups() as $propertyIds) {
+            DB::transaction(function () use ($propertyIds, $period, $settings, $monthlyFee, $dueOn, $periodCode, $penaltyRate, $year, $month, $userId, &$count): void {
+                $properties = Property::query()->whereKey($propertyIds)->orderBy('id')->lockForUpdate()->get();
+                $billingPropertyId = $properties->first()?->id;
+                $enrollment = $this->enrollmentCovering($propertyIds, $year, $month);
+                $created = [];
+
+                foreach ($properties as $property) {
                     if ($property->statements()->where('billing_period_id', $period->id)->exists()) {
-                        return;
+                        continue;
                     }
 
-                    $previousBalance = $this->accounts->summary($property)['outstanding_cents'];
-                    $regular = BillingMath::regularDues($property->lot_area, $settings->dues_rate_per_sqm);
-                    $penalty = BillingMath::penalty($previousBalance, $settings->penalty_percent);
-                    $dueDay = min($settings->due_day, cal_days_in_month(CAL_GREGORIAN, $month, $year));
+                    $isBillingProperty = $property->id === $billingPropertyId;
+                    $regular = $isBillingProperty ? BillingMath::cents($enrollment?->monthly_fee ?? $monthlyFee) : 0;
 
-                    $statement = $property->statements()->create([
+                    $created[] = $property->statements()->create([
                         'code' => $this->codes->next('statement', $periodCode),
                         'billing_period_id' => $period->id,
                         'regular' => BillingMath::decimal($regular),
                         'special' => '0.00',
-                        'penalty' => BillingMath::decimal($penalty),
-                        'previous_balance' => BillingMath::decimal($previousBalance),
+                        'penalty' => '0.00',
+                        'penalty_type' => $settings->penalty_type,
+                        'penalty_rate' => $penaltyRate,
+                        'grace_days' => $settings->grace_days,
+                        'previous_balance' => '0.00',
                         'credits' => '0.00',
-                        'due_on' => sprintf('%04d-%02d-%02d', $year, $month, $dueDay),
+                        'due_on' => $dueOn,
                         'created_by' => $userId,
-                    ]);
-                    $this->applyAdvanceCredits($property, $statement);
+                    ])->id;
                     $count++;
-                });
-            }
-        });
+                }
+
+                if ($created !== []) {
+                    $this->recalculator->recalculate($properties, 'statement generation', $created);
+                }
+            });
+        }
 
         return $count;
     }
@@ -78,8 +105,13 @@ class BillingService
             throw ValidationException::withMessages(['reference_no' => 'A reference number is required for non-cash payments.']);
         }
 
+        if ($attributes['paid_on'] < now()->subDays(30)->toDateString() && blank($attributes['remarks'] ?? null)) {
+            throw ValidationException::withMessages(['remarks' => 'Explain why a payment made more than 30 days ago is only being recorded now.']);
+        }
+
         return DB::transaction(function () use ($property, $attributes, $userId, $amount): Payment {
             Property::query()->lockForUpdate()->findOrFail($property->id);
+
             $payment = $property->payments()->create([
                 'code' => $this->codes->next('payment'),
                 'or_no' => $this->codes->next('official_receipt'),
@@ -92,10 +124,33 @@ class BillingService
                 'received_by' => $userId,
             ]);
 
-            $this->allocate($payment, $amount);
+            $this->recalculateGroup($property, sprintf('payment %s dated %s recorded', $payment->or_no, $payment->paid_on->toDateString()));
 
             return $payment;
         });
+    }
+
+    public function recalculateGroup(Property $property, string $reason, bool $noteChanges = true): void
+    {
+        $this->recalculator->recalculate($this->owners->groupProperties($property), $reason, [], $noteChanges);
+    }
+
+    /**
+     * Brings every account up to date. Late penalties accrue monthly and amnesties lapse on a date, so this runs daily.
+     */
+    public function recalculateAll(): int
+    {
+        $count = 0;
+
+        foreach ($this->owners->allGroups() as $propertyIds) {
+            DB::transaction(function () use ($propertyIds): void {
+                $properties = Property::query()->whereKey($propertyIds)->orderBy('id')->lockForUpdate()->get();
+                $this->recalculator->recalculate($properties, 'daily update', [], false);
+            });
+            $count++;
+        }
+
+        return $count;
     }
 
     public function requestVoid(Payment $payment, string $reason, int $userId): void
@@ -114,7 +169,10 @@ class BillingService
             throw ValidationException::withMessages(['status' => 'Only requested voids can be approved.']);
         }
 
-        $payment->update(['status' => 'Voided', 'voided_by' => $administratorId]);
+        DB::transaction(function () use ($payment, $administratorId): void {
+            $payment->update(['status' => 'Voided', 'voided_by' => $administratorId]);
+            $this->recalculateGroup($payment->property, sprintf('payment %s voided', $payment->or_no));
+        });
     }
 
     public function requestAdjustment(DuesStatement $statement, string $amount, string $reason, int $userId): StatementAdjustment
@@ -145,24 +203,33 @@ class BillingService
             throw ValidationException::withMessages(['amount' => 'The adjustment exceeds the current open balance.']);
         }
 
-        $adjustment->update(['status' => 'Approved', 'approved_by' => $administratorId, 'approved_at' => now()]);
+        DB::transaction(function () use ($adjustment, $administratorId): void {
+            $adjustment->update(['status' => 'Approved', 'approved_by' => $administratorId, 'approved_at' => now()]);
+            $this->recalculateGroup($adjustment->statement->property, 'adjustment approved');
+        });
     }
 
-    public function createCharge(Property $property, string $description, string $amount, ?string $dueOn = null, ?int $userId = null): Charge
+    public function createCharge(Property $property, string $description, string $amount, ?string $dueOn = null, ?int $userId = null, ?int $chargeTypeId = null): Charge
     {
         if (BillingMath::cents($amount) <= 0) {
             throw ValidationException::withMessages(['amount' => 'Charge amount must be positive.']);
         }
 
-        return DB::transaction(fn (): Charge => $property->charges()->create([
-            'code' => $this->codes->next('charge'),
-            'description' => $description,
-            'amount' => $amount,
-            'due_on' => $dueOn,
-            'status' => 'Unpaid',
-            'created_by' => $userId,
-            'updated_by' => $userId,
-        ]));
+        return DB::transaction(function () use ($property, $description, $amount, $dueOn, $userId, $chargeTypeId): Charge {
+            $charge = $property->charges()->create([
+                'code' => $this->codes->next('charge'),
+                'charge_type_id' => $chargeTypeId,
+                'description' => $description,
+                'amount' => $amount,
+                'due_on' => $dueOn,
+                'status' => 'Unpaid',
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ]);
+            $this->recalculateGroup($property, 'charge '.$charge->code.' added');
+
+            return $charge;
+        });
     }
 
     public function requestWaiver(Charge $charge, string $reason, int $userId): void
@@ -185,49 +252,22 @@ class BillingService
             throw ValidationException::withMessages(['status' => 'A charge with payments cannot be waived.']);
         }
 
-        $charge->update(['status' => 'Waived', 'waived_by' => $administratorId]);
+        DB::transaction(function () use ($charge, $administratorId): void {
+            $charge->update(['status' => 'Waived', 'waived_by' => $administratorId]);
+            $this->recalculateGroup($charge->property, 'charge waived');
+        });
     }
 
-    private function allocate(Payment $payment, int $remaining): void
+    /**
+     * @param  list<int>  $propertyIds
+     */
+    private function enrollmentCovering(array $propertyIds, int $year, int $month): ?AdvancePaymentEnrollment
     {
-        $property = $payment->property;
-        $items = $property->statements()->orderBy('due_on')->get()
-            ->concat($property->charges()->whereNotIn('status', ['Waived', 'Refunded'])->orderBy('due_on')->get())
-            ->sortBy(fn ($item) => $item->due_on?->toDateString() ?? '9999-12-31');
-
-        foreach ($items as $item) {
-            $due = $item instanceof DuesStatement
-                ? $this->accounts->statementBalanceCents($item)
-                : $this->accounts->chargeBalanceCents($item);
-            $applied = min($remaining, $due);
-
-            if ($applied > 0) {
-                $item->allocations()->create(['payment_id' => $payment->id, 'amount' => BillingMath::decimal($applied)]);
-                $remaining -= $applied;
-            }
-
-            if ($remaining === 0) {
-                break;
-            }
-        }
-    }
-
-    private function applyAdvanceCredits(Property $property, DuesStatement $statement): void
-    {
-        $remaining = $this->accounts->statementBalanceCents($statement);
-
-        foreach ($property->payments()->where('status', '!=', 'Voided')->oldest('paid_on')->get() as $payment) {
-            $available = $this->accounts->unappliedCents($payment);
-            $applied = min($available, $remaining);
-
-            if ($applied > 0) {
-                $statement->allocations()->create(['payment_id' => $payment->id, 'amount' => BillingMath::decimal($applied)]);
-                $remaining -= $applied;
-            }
-
-            if ($remaining === 0) {
-                break;
-            }
-        }
+        return AdvancePaymentEnrollment::query()
+            ->with('promo')
+            ->whereIn('property_id', $propertyIds)
+            ->whereHas('payment', fn (Builder $query) => $query->where('status', '!=', 'Voided'))
+            ->get()
+            ->first(fn (AdvancePaymentEnrollment $enrollment): bool => $enrollment->promo->covers($year, $month));
     }
 }

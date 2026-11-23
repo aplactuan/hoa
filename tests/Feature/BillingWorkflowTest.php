@@ -2,6 +2,7 @@
 
 use App\Enums\RoleName;
 use App\Models\DuesStatement;
+use App\Models\MonthlyFeeRate;
 use App\Models\Property;
 use App\Models\Setting;
 use App\Models\User;
@@ -12,10 +13,12 @@ use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
-test('statement generation is idempotent and carries an unpaid balance with penalty', function () {
-    $property = Property::factory()->create(['lot_area' => '125.50']);
+test('statement generation is idempotent and an unpaid month is penalized after its due date in the following month', function () {
+    $this->travelTo(Carbon::parse('2026-11-23'));
+    MonthlyFeeRate::factory()->create(['amount' => '1255.00', 'effective_from' => '2026-10-01']);
+    $property = Property::factory()->create();
     $settings = Setting::current();
-    $settings->update(['dues_rate_per_sqm' => '10.00', 'penalty_percent' => '2.00', 'due_day' => 15]);
+    $settings->update(['penalty_percent' => '2.00', 'due_day' => 15]);
     $billing = app(BillingService::class);
 
     expect($billing->generatePeriod(2026, 10))->toBe(1)
@@ -25,14 +28,17 @@ test('statement generation is idempotent and carries an unpaid balance with pena
     $statements = DuesStatement::query()->where('property_id', $property->id)->orderBy('due_on')->get();
     expect($statements)->toHaveCount(2)
         ->and($statements[0]->regular)->toBe('1255.00')
+        ->and($statements[0]->due_on->toDateString())->toBe('2026-11-15')
+        ->and($statements[0]->penalty)->toBe('25.10')
         ->and($statements[1]->previous_balance)->toBe('1255.00')
-        ->and($statements[1]->penalty)->toBe('25.10');
+        ->and($statements[1]->penalty)->toBe('0.00');
     expect(app(AccountService::class)->summary($property)['outstanding_cents'])->toBe(253510);
 });
 
 test('payment allocates oldest first and approved void restores the balance', function () {
     $this->travelTo(Carbon::parse('2026-11-20'));
-    $property = Property::factory()->create(['lot_area' => '100.00']);
+    MonthlyFeeRate::factory()->create(['amount' => '1000.00', 'effective_from' => '2026-10-01']);
+    $property = Property::factory()->create();
     $billing = app(BillingService::class);
     $billing->generatePeriod(2026, 10);
     $billing->generatePeriod(2026, 11);
@@ -45,7 +51,7 @@ test('payment allocates oldest first and approved void restores the balance', fu
 
     expect($payment->or_no)->toBe('OR-000001')
         ->and($payment->allocations)->toHaveCount(1)
-        ->and($payment->allocations[0]->allocatable->due_on->toDateString())->toBe('2026-10-15');
+        ->and($payment->allocations[0]->allocatable->due_on->toDateString())->toBe('2026-11-15');
     expect(app(AccountService::class)->summary($property)['outstanding_cents'])->toBe(152000);
 
     $treasurer = User::factory()->create();
@@ -58,7 +64,8 @@ test('payment allocates oldest first and approved void restores the balance', fu
 
 test('advance payment becomes credit and is applied to the next statement', function () {
     $this->travelTo(Carbon::parse('2026-10-20'));
-    $property = Property::factory()->create(['lot_area' => '10.00']);
+    MonthlyFeeRate::factory()->create(['amount' => '100.00', 'effective_from' => '2026-10-01']);
+    $property = Property::factory()->create();
     $billing = app(BillingService::class);
     $billing->generatePeriod(2026, 10);
 
@@ -104,7 +111,9 @@ test('a security guard cannot load billing screens', function () {
 });
 
 test('credits and waivers cannot erase payments or exceed an open balance', function () {
-    $property = Property::factory()->create(['lot_area' => '100.00']);
+    $this->travelTo(Carbon::parse('2026-10-20'));
+    MonthlyFeeRate::factory()->create(['amount' => '1000.00', 'effective_from' => '2026-10-01']);
+    $property = Property::factory()->create();
     $billing = app(BillingService::class);
     $billing->generatePeriod(2026, 10);
     $statement = $property->statements()->sole();

@@ -25,6 +25,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('/', 'pages::owner.dashboard')->name('dashboard');
         Route::livewire('property', 'pages::owner.property')->name('property');
         Route::livewire('account', 'pages::owner.account')->name('account');
+        Route::get('statement-of-account/print', [PrintDocumentController::class, 'ownerStatementOfAccount'])->name('statement-of-account.print');
+        Route::get('statement-of-account/csv', [PrintDocumentController::class, 'ownerStatementOfAccountCsv'])->name('statement-of-account.csv');
         Route::livewire('requests', 'pages::owner.requests')->name('requests');
         Route::livewire('facilities', 'pages::owner.facilities')->name('facilities');
         Route::livewire('notices', 'pages::owner.notices')->name('notices');
@@ -46,6 +48,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('properties/{property}', 'pages::property-profile')
         ->middleware('permission:'.Permission::PropertiesView->value)
         ->name('properties.show');
+
+    Route::get('properties/{property}/statement-of-account/print', [PrintDocumentController::class, 'propertyStatementOfAccount'])
+        ->middleware('permission:'.Permission::StatementsView->value)
+        ->name('properties.statement-of-account.print');
+
+    Route::get('properties/{property}/statement-of-account/csv', [PrintDocumentController::class, 'propertyStatementOfAccountCsv'])
+        ->middleware('permission:'.Permission::StatementsView->value)
+        ->name('properties.statement-of-account.csv');
 
     Route::livewire('owners', 'pages::people')
         ->middleware('permission:'.Permission::OwnersView->value)

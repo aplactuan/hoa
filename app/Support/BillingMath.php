@@ -47,6 +47,14 @@ class BillingMath
             throw new InvalidArgumentException('Balance cannot be negative.');
         }
 
-        return intdiv($balanceCents * self::cents($percent) + 5000, 10000);
+        return self::percentOf($balanceCents, $percent);
+    }
+
+    /**
+     * Percent of an amount in cents, rounded half up to the nearest cent.
+     */
+    public static function percentOf(int $cents, string $percent): int
+    {
+        return intdiv($cents * self::cents($percent) + 5000, 10000);
     }
 }

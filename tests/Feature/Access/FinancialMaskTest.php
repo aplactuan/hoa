@@ -3,6 +3,7 @@
 use App\Enums\Permission;
 use App\Enums\RoleName;
 use App\Models\Facility;
+use App\Models\MonthlyFeeRate;
 use App\Models\Setting;
 use App\Models\TransactionType;
 use App\Models\User;
@@ -34,7 +35,8 @@ test('a security guard response never contains a money value', function () {
     $this->seed(AccessSeeder::class);
     $this->seed(MasterDataSeeder::class);
 
-    Setting::query()->update(['dues_rate_per_sqm' => '98765.43']);
+    Setting::query()->update(['membership_fee' => '98765.43', 'penalty_fixed_amount' => '98765.43']);
+    MonthlyFeeRate::query()->update(['amount' => '98765.43']);
     Facility::query()->update(['fee' => '98765.43', 'deposit' => '98765.43']);
     TransactionType::query()->update(['default_fee' => '98765.43']);
     ViolationType::query()->update(['default_fine' => '98765.43']);

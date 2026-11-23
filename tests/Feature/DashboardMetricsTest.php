@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\RoleName;
+use App\Models\MonthlyFeeRate;
 use App\Models\Property;
 use App\Models\User;
 use App\Services\BillingService;
@@ -11,7 +12,8 @@ use Illuminate\Support\Carbon;
 test('dashboard metrics use the same billed and allocated values as the account', function () {
     $this->travelTo(Carbon::parse('2026-10-14'));
     $this->seed(AccessSeeder::class);
-    $property = Property::factory()->create(['lot_area' => '10.00', 'status' => 'Occupied']);
+    MonthlyFeeRate::factory()->create(['amount' => '100.00', 'effective_from' => '2026-10-01']);
+    $property = Property::factory()->create(['status' => 'Occupied']);
     $billing = app(BillingService::class);
     $billing->generatePeriod(2026, 10);
     $billing->recordPayment($property, ['amount' => '40.00', 'paid_on' => '2026-10-14', 'method' => 'Cash']);

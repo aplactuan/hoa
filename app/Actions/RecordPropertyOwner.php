@@ -15,6 +15,7 @@ class RecordPropertyOwner
         private PropertyRegistry $registry,
         private LinkOwnerUser $linkOwnerUser,
         private InviteOwnerUser $inviteOwnerUser,
+        private ChargeMembershipFee $chargeMembershipFee,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -30,17 +31,16 @@ class RecordPropertyOwner
                 : null;
             $owner = $this->registry->transferOwnership($property, array_merge($attributes, ['email' => $email]), $actorId);
 
-            if ($email === null) {
-                return $owner;
-            }
-
             if ($user !== null) {
-                return $this->linkOwnerUser->handle($user, $owner, $actorId);
+                $owner = $this->linkOwnerUser->handle($user, $owner, $actorId);
+            } elseif ($email !== null) {
+                $this->inviteOwnerUser->handle($owner, $email, $actorId);
+                $owner->refresh();
             }
 
-            $this->inviteOwnerUser->handle($owner, $email, $actorId);
+            $this->chargeMembershipFee->handle($owner, $actorId);
 
-            return $owner->refresh();
+            return $owner;
         });
     }
 }

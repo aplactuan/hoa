@@ -6,6 +6,7 @@ use App\Enums\DeviceKind;
 use App\Models\ChargeType;
 use App\Models\Device;
 use App\Models\Facility;
+use App\Models\MonthlyFeeRate;
 use App\Models\PropertyType;
 use App\Models\RequestCategory;
 use App\Models\Section;
@@ -29,8 +30,9 @@ class MasterDataSeeder extends Seeder
         if ($setting === null) {
             Setting::query()->create([
                 'dues_rate_per_sqm' => 10,
-                'penalty_percent' => 2,
-                'due_day' => 15,
+                'penalty_percent' => 3,
+                'membership_fee' => 1000,
+                'due_day' => 10,
                 'grace_days' => 0,
                 'expiry_warning_days' => 45,
                 'hoa_name' => 'Green Meadows Homeowners Association',
@@ -62,7 +64,15 @@ class MasterDataSeeder extends Seeder
             ['default_fee' => 100, 'is_active' => true],
         );
 
-        foreach (['Monthly Dues', 'Penalty', 'Special Assessment'] as $chargeType) {
+        if (! MonthlyFeeRate::query()->exists()) {
+            MonthlyFeeRate::query()->create([
+                'amount' => 500,
+                'effective_from' => now()->startOfMonth()->toDateString(),
+                'remarks' => 'Placeholder until the board confirms the monthly fee.',
+            ]);
+        }
+
+        foreach (['Monthly Dues', 'Membership Fee', 'Penalty', 'Special Assessment'] as $chargeType) {
             ChargeType::query()->updateOrCreate(['name' => $chargeType], ['is_active' => true]);
         }
 

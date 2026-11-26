@@ -10,6 +10,8 @@ use App\Models\Resident;
 use App\Models\Vehicle;
 use App\Enums\Permission;
 use App\Services\AccountService;
+use App\Services\OwnerAccounts;
+use App\Services\StatementOfAccount;
 use App\Services\DisplayCode;
 use App\Services\PropertyRegistry;
 use Flux\Flux;
@@ -25,6 +27,10 @@ new #[Title('Property profile')] class extends Component
 
     public Property $property;
     public string $tab = 'Overview';
+
+    public string $soaTab = 'schedule';
+
+    public string $soaAsOf = '';
     public string $ownerFirstName = '';
     public string $ownerLastName = '';
     public string $ownerPhone = '';
@@ -111,6 +117,21 @@ new #[Title('Property profile')] class extends Component
         abort_unless(auth()->user()->hasPermission(Permission::FinancialView), 403);
 
         return app(AccountService::class)->summary($this->record);
+    }
+
+    /**
+     * The statement of account for every property the current owner holds, since the monthly fee is billed per owner.
+     *
+     * @return array<string, mixed>
+     */
+    #[Computed]
+    public function ownerStatement(): array
+    {
+        abort_unless(auth()->user()->hasPermission(Permission::FinancialView), 403);
+
+        $asOf = \Illuminate\Support\Carbon::make($this->soaAsOf ?: null) ?? now();
+
+        return app(StatementOfAccount::class)->forProperties(app(OwnerAccounts::class)->groupProperties($this->record), $asOf->isFuture() ? now() : $asOf);
     }
 
     #[Computed]
@@ -444,6 +465,20 @@ new #[Title('Property profile')] class extends Component
             <flux:card><flux:heading size="lg">Payments</flux:heading>@foreach ($this->record->payments as $payment)<div wire:key="profile-payment-{{ $payment->id }}" class="border-t border-zinc-200 py-2 text-sm dark:border-zinc-700">{{ $payment->or_no }} · ₱{{ $payment->amount }} · {{ $payment->status }}</div>@endforeach</flux:card>
             <flux:card><flux:heading size="lg">Charges</flux:heading>@foreach ($this->record->charges as $charge)<div wire:key="profile-charge-{{ $charge->id }}" class="border-t border-zinc-200 py-2 text-sm dark:border-zinc-700">{{ $charge->description }} · ₱{{ $charge->amount }}</div>@endforeach</flux:card>
         </div>
+        <flux:card class="flex flex-wrap items-end justify-between gap-4">
+            <div>
+                <flux:heading size="lg">Owner statement of account</flux:heading>
+                <flux:text>{{ $this->ownerStatement['owner_name'] }} · {{ collect($this->ownerStatement['properties'])->pluck('code')->join(', ') }}</flux:text>
+            </div>
+            <div class="flex flex-wrap items-end gap-2">
+                <flux:input type="date" label="Statement as of" wire:model.live="soaAsOf" :max="now()->toDateString()" />
+                @if (auth()->user()->hasPermission(Permission::StatementsView))
+                    <flux:button icon="arrow-down-tray" :href="route('properties.statement-of-account.csv', ['property' => $this->record, 'as_of' => $this->ownerStatement['as_of']])">Excel / Sheets</flux:button>
+                    <flux:button variant="primary" icon="arrow-down-tray" :href="route('properties.statement-of-account.print', ['property' => $this->record, 'as_of' => $this->ownerStatement['as_of']])" target="_blank">Export PDF</flux:button>
+                @endif
+            </div>
+        </flux:card>
+        <x-statement-of-account :account="$this->ownerStatement" :tab="$soaTab" />
     @elseif ($tab === 'Office' && auth()->user()->hasPermission(Permission::TransactionsView))
         <div class="grid gap-4 lg:grid-cols-2">
             <flux:card><flux:heading size="lg">Transactions</flux:heading>@foreach ($this->record->transactions as $transaction)<div wire:key="profile-transaction-{{ $transaction->id }}" class="border-t border-zinc-200 py-2 text-sm dark:border-zinc-700">{{ $transaction->code }} · {{ $transaction->status }}</div>@endforeach</flux:card>

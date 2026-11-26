@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use App\Actions\ChargeMembershipFee;
 use App\Enums\PenaltyType;
 use App\Enums\RoleName;
 use App\Models\AdvancePaymentEnrollment;
 use App\Models\BillingPeriod;
 use App\Models\Charge;
+use App\Models\ChargeType;
 use App\Models\DuesStatement;
 use App\Models\MonthlyFeeRate;
+use App\Models\Owner;
 use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Setting;
@@ -16,6 +19,7 @@ use App\Models\StatementAdjustment;
 use App\Support\BillingMath;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -45,10 +49,9 @@ class BillingService
         );
         $settings = Setting::current();
         $monthlyFee = MonthlyFeeRate::amountFor($year, $month);
-        $dueMonth = CarbonImmutable::create($year, $month, 1)->addMonthNoOverflow();
-        $dueOn = $dueMonth->day(min($settings->due_day, $dueMonth->daysInMonth))->toDateString();
+        $dueOn = $this->dueOn($settings, $year, $month);
         $periodCode = sprintf('%04d%02d', $year, $month);
-        $penaltyRate = $settings->penalty_type === PenaltyType::Fixed ? $settings->penalty_fixed_amount : $settings->penalty_percent;
+        $penaltyRate = $this->penaltyRate($settings);
         $count = 0;
 
         foreach ($this->owners->allGroups() as $propertyIds) {
@@ -90,6 +93,57 @@ class BillingService
         }
 
         return $count;
+    }
+
+    /**
+     * Rebuilds every account from the current billing rules, starting at the given month.
+     *
+     * Bills any month from $from to now that has no statement yet, reprices the statements from $from on with today's
+     * monthly fee and penalty rules, charges or reprices each member's one-time membership fee dated from their start of
+     * ownership, then recalculates penalties and payment allocations. Running it again with the same rules changes nothing.
+     *
+     * @return array{statements_created: int, statements_repriced: int, membership_fees_created: int, membership_fees_updated: int, accounts_recalculated: int}
+     */
+    public function rebuildAccounts(CarbonImmutable $from, ?string $monthlyFee = null, ?int $userId = null): array
+    {
+        $from = $from->startOfMonth();
+
+        if ($monthlyFee !== null) {
+            MonthlyFeeRate::query()->whereDate('effective_from', $from->toDateString())->firstOrNew()
+                ->fill(['effective_from' => $from->toDateString(), 'amount' => $monthlyFee, 'remarks' => 'Set by account rebuild', 'created_by' => $userId])
+                ->save();
+        }
+
+        $created = 0;
+
+        for ($month = $from; $month->lessThanOrEqualTo(now()->startOfMonth()); $month = $month->addMonthNoOverflow()) {
+            $created += $this->generatePeriod($month->year, $month->month, $userId);
+        }
+
+        $settings = Setting::current();
+        $repriced = 0;
+        $membership = ['created' => 0, 'updated' => 0];
+
+        foreach ($this->owners->allGroups() as $propertyIds) {
+            DB::transaction(function () use ($propertyIds, $from, $settings, $userId, &$repriced, &$membership): void {
+                $properties = Property::query()->whereKey($propertyIds)->orderBy('id')->lockForUpdate()->get();
+                $repriced += $this->repriceStatements($properties, $from, $settings);
+
+                $result = $this->rebuildMembershipFee($properties, $settings, $userId);
+
+                if ($result !== null) {
+                    $membership[$result]++;
+                }
+            });
+        }
+
+        return [
+            'statements_created' => $created,
+            'statements_repriced' => $repriced,
+            'membership_fees_created' => $membership['created'],
+            'membership_fees_updated' => $membership['updated'],
+            'accounts_recalculated' => $this->recalculateAll(),
+        ];
     }
 
     /** @param array{amount: string, method: string, paid_on: string, reference_no?: string|null, remarks?: string|null} $attributes */
@@ -261,6 +315,122 @@ class BillingService
     /**
      * @param  list<int>  $propertyIds
      */
+    /**
+     * Applies the current monthly fee and penalty rules to an owner group's statements from the given month on.
+     *
+     * @param  EloquentCollection<int, Property>  $properties  one owner group, ordered by id so the first is the billing property
+     */
+    private function repriceStatements(EloquentCollection $properties, CarbonImmutable $from, Setting $settings): int
+    {
+        $billingPropertyId = $properties->first()?->id;
+        $statements = DuesStatement::query()
+            ->whereIn('property_id', $properties->modelKeys())
+            ->whereHas('billingPeriod', fn (Builder $query) => $query
+                ->where('year', '>', $from->year)
+                ->orWhere(fn (Builder $query) => $query->where('year', $from->year)->where('month', '>=', $from->month)))
+            ->with('billingPeriod')
+            ->get();
+        $repriced = 0;
+
+        foreach ($statements as $statement) {
+            $year = $statement->billingPeriod->year;
+            $month = $statement->billingPeriod->month;
+            $regular = $statement->property_id === $billingPropertyId
+                ? BillingMath::cents($this->enrollmentCovering($properties->modelKeys(), $year, $month)?->monthly_fee ?? MonthlyFeeRate::amountFor($year, $month))
+                : 0;
+
+            $statement->fill([
+                'regular' => BillingMath::decimal($regular),
+                'penalty_type' => $settings->penalty_type,
+                'penalty_rate' => $this->penaltyRate($settings),
+                'grace_days' => $settings->grace_days,
+                'due_on' => $this->dueOn($settings, $year, $month),
+            ]);
+
+            if ($statement->isDirty()) {
+                $statement->save();
+                $repriced++;
+            }
+        }
+
+        return $repriced;
+    }
+
+    /**
+     * Charges the one-time membership fee for an owner group, or brings an existing one in line with the current fee.
+     *
+     * The fee is due on the group's earliest start of ownership. A member whose portal account already has a membership
+     * fee on another property, including one they used to own, is not charged again. A waived fee is left alone.
+     *
+     * @param  EloquentCollection<int, Property>  $properties  one owner group, ordered by id so the first is the billing property
+     * @return 'created'|'updated'|null
+     */
+    private function rebuildMembershipFee(EloquentCollection $properties, Setting $settings, ?int $userId): ?string
+    {
+        $owners = Owner::query()->whereIn('property_id', $properties->modelKeys())->where('status', 'Current')->get();
+
+        if ($owners->isEmpty()) {
+            return null;
+        }
+
+        $dueOn = $owners->min('started_on')->toDateString();
+        $memberPropertyIds = Owner::withTrashed()
+            ->whereIn('user_id', $owners->pluck('user_id')->filter()->unique())
+            ->pluck('property_id')
+            ->merge($properties->modelKeys())
+            ->unique();
+        $chargeTypeId = ChargeType::query()->where('name', 'Membership Fee')->value('id');
+        $existing = Charge::query()
+            ->whereIn('property_id', $memberPropertyIds)
+            ->where('status', '!=', 'Refunded')
+            ->where(fn (Builder $query) => $query
+                ->where('description', ChargeMembershipFee::DESCRIPTION)
+                ->when($chargeTypeId !== null, fn (Builder $query) => $query->orWhere('charge_type_id', $chargeTypeId)))
+            ->oldest('id')
+            ->first();
+
+        if (BillingMath::cents($settings->membership_fee) <= 0 || $existing?->status === 'Waived') {
+            return null;
+        }
+
+        if ($existing === null) {
+            $properties->first()->charges()->create([
+                'code' => $this->codes->next('charge'),
+                'charge_type_id' => $chargeTypeId,
+                'description' => ChargeMembershipFee::DESCRIPTION,
+                'amount' => $settings->membership_fee,
+                'due_on' => $dueOn,
+                'status' => 'Unpaid',
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ]);
+
+            return 'created';
+        }
+
+        $existing->fill(['amount' => $settings->membership_fee, 'due_on' => $dueOn, 'updated_by' => $userId]);
+
+        if (! $existing->isDirty(['amount', 'due_on'])) {
+            return null;
+        }
+
+        $existing->save();
+
+        return 'updated';
+    }
+
+    private function dueOn(Setting $settings, int $year, int $month): string
+    {
+        $dueMonth = CarbonImmutable::create($year, $month, 1)->addMonthNoOverflow();
+
+        return $dueMonth->day(min($settings->due_day, $dueMonth->daysInMonth))->toDateString();
+    }
+
+    private function penaltyRate(Setting $settings): string
+    {
+        return (string) ($settings->penalty_type === PenaltyType::Fixed ? $settings->penalty_fixed_amount : $settings->penalty_percent);
+    }
+
     private function enrollmentCovering(array $propertyIds, int $year, int $month): ?AdvancePaymentEnrollment
     {
         return AdvancePaymentEnrollment::query()

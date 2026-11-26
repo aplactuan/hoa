@@ -71,6 +71,9 @@ new #[Title('My Account')] class extends OwnerPortalComponent
             </div>
             <div class="flex flex-wrap items-end gap-2">
                 <flux:input type="date" :label="__('Statement as of')" wire:model.live="asOf" :max="now()->toDateString()" />
+                @if ($this->statement['as_of'] !== now()->toDateString())
+                    <flux:button wire:click="$set('asOf', '{{ now()->toDateString() }}')">{{ __('Today') }}</flux:button>
+                @endif
                 <flux:button icon="arrow-down-tray" :href="route('owner.statement-of-account.csv', ['as_of' => $this->statement['as_of']])">{{ __('Excel / Sheets') }}</flux:button>
                 <flux:button variant="primary" icon="arrow-down-tray" :href="route('owner.statement-of-account.print', ['as_of' => $this->statement['as_of']])" target="_blank">{{ __('Export PDF') }}</flux:button>
             </div>

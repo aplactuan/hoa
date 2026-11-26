@@ -5,6 +5,8 @@ use App\Enums\PenaltyType;
 use App\Enums\RoleName;
 use App\Models\AdvancePaymentPromo;
 use App\Models\AuditLog;
+use App\Models\BillingPeriod;
+use App\Models\DuesStatement;
 use App\Models\MonthlyFeeRate;
 use App\Models\PenaltyAmnesty;
 use App\Models\Setting;
@@ -67,10 +69,11 @@ test('the due day must stay within the first 28 days', function () {
         ->assertSee('The due day field must be between 1 and 28.');
 });
 
-test('an administrator can schedule a monthly fee change and create a promo but cannot backdate a rate', function () {
+test('an administrator can schedule a monthly fee change and create a promo but cannot backdate a rate over billed months', function () {
     $this->travelTo(Carbon::parse('2026-11-23'));
     $this->seed(AccessSeeder::class);
     $this->seed(MasterDataSeeder::class);
+    DuesStatement::factory()->for(BillingPeriod::factory()->state(['year' => 2026, 'month' => 11]))->create();
 
     $admin = User::factory()->create();
     $admin->assignRole(RoleName::Administrator);
@@ -101,4 +104,22 @@ test('an administrator can schedule a monthly fee change and create a promo but 
         ->and(MonthlyFeeRate::amountFor(2027, 1))->toBe('1200.00')
         ->and(AdvancePaymentPromo::query()->sole()->coveredMonths())->toHaveCount(12)
         ->and(PenaltyAmnesty::query()->sole()->ends_on->toDateString())->toBe('2026-12-31');
+});
+
+test('an administrator can backdate a rate to a month that has not been billed yet', function () {
+    $this->travelTo(Carbon::parse('2026-11-23'));
+    $this->seed(AccessSeeder::class);
+    $this->seed(MasterDataSeeder::class);
+
+    $admin = User::factory()->create();
+    $admin->assignRole(RoleName::Administrator);
+
+    Livewire::actingAs($admin)
+        ->test('pages::settings.hoa')
+        ->set('rateAmount', '800.00')
+        ->set('rateMonth', '2026-01')
+        ->call('addRate')
+        ->assertHasNoErrors();
+
+    expect(MonthlyFeeRate::amountFor(2026, 1))->toBe('800.00');
 });

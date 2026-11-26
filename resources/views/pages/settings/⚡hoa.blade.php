@@ -183,7 +183,7 @@ new #[Title('Association settings')] class extends Component
             'promoName' => ['required', 'string', 'max:255'],
             'promoDiscountType' => ['required', Rule::enum(DiscountType::class)],
             'promoDiscountValue' => ['required', 'numeric', 'gt:0', $this->promoDiscountType === 'percent' ? 'max:100' : 'max:99999999.99'],
-            'promoPayBy' => ['required', 'date', 'after_or_equal:today'],
+            'promoPayBy' => ['required', 'date'],
             'promoCoversFrom' => ['required', 'date_format:Y-m'],
             'promoCoversTo' => ['required', 'date_format:Y-m', 'after_or_equal:promoCoversFrom'],
         ]);

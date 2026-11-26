@@ -20,16 +20,23 @@ class DashboardService
     /** @return array<string, mixed> */
     public function overview(): array
     {
-        $properties = Property::query()->with([
+        $accounts = collect();
+
+        Property::query()->with([
             'currentOwner',
             'statements.allocations.payment',
             'statements.adjustments',
             'charges.allocations.payment',
             'payments.allocations',
-        ])->get();
-        $accounts = $properties->map(function (Property $property): array {
-            return ['property' => $property, 'summary' => $this->accounts->summary($property, useLoaded: true)];
+        ])->chunkById(100, function ($properties) use ($accounts): void {
+            foreach ($properties as $property) {
+                $summary = $this->accounts->summary($property, useLoaded: true);
+                $property->setRelations(['currentOwner' => $property->currentOwner]);
+                $accounts->push(['property' => $property, 'summary' => $summary]);
+            }
         });
+
+        $properties = $accounts->pluck('property');
         $monthStatements = DuesStatement::query()->with(['billingPeriod', 'allocations.payment'])
             ->whereHas('billingPeriod', fn ($query) => $query->where('year', now()->year)->where('month', now()->month))->get();
         $billed = $monthStatements->sum(fn (DuesStatement $statement): int => BillingMath::cents($statement->regular));

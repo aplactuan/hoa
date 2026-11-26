@@ -106,6 +106,28 @@ test('an administrator can schedule a monthly fee change and create a promo but 
         ->and(PenaltyAmnesty::query()->sole()->ends_on->toDateString())->toBe('2026-12-31');
 });
 
+test('an administrator can record a promo whose pay-by deadline has already passed', function () {
+    $this->travelTo(Carbon::parse('2026-11-27'));
+    $this->seed(AccessSeeder::class);
+    $this->seed(MasterDataSeeder::class);
+
+    $admin = User::factory()->create();
+    $admin->assignRole(RoleName::Administrator);
+
+    Livewire::actingAs($admin)
+        ->test('pages::settings.hoa')
+        ->set('promoName', 'Full Year 2025')
+        ->set('promoDiscountType', 'fixed')
+        ->set('promoDiscountValue', '500.00')
+        ->set('promoPayBy', '2025-02-05')
+        ->set('promoCoversFrom', '2025-01')
+        ->set('promoCoversTo', '2025-12')
+        ->call('addPromo')
+        ->assertHasNoErrors();
+
+    expect(AdvancePaymentPromo::query()->sole()->pay_by->toDateString())->toBe('2025-02-05');
+});
+
 test('an administrator can backdate a rate to a month that has not been billed yet', function () {
     $this->travelTo(Carbon::parse('2026-11-23'));
     $this->seed(AccessSeeder::class);

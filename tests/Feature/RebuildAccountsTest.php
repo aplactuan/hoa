@@ -78,6 +78,18 @@ test('running the rebuild again with the same rules changes nothing', function (
     ]);
 });
 
+test('reports progress after each owner account is rebuilt', function () {
+    Property::factory()->create();
+    $reports = [];
+
+    app(BillingService::class)->rebuildAccounts(CarbonImmutable::parse('2025-01-01'), progress: function (int $done, int $total) use (&$reports): void {
+        $reports[] = [$done, $total];
+    });
+
+    expect($reports)->toBe([[0, 2], [1, 2], [2, 2]])
+        ->and(DuesStatement::query()->count())->toBe(8);
+});
+
 test('reprices an existing membership fee to the finalized amount and start of ownership', function () {
     $fee = app(BillingService::class)->createCharge($this->property, ChargeMembershipFee::DESCRIPTION, '500.00', '2025-04-01');
     finalizeBillingRules();

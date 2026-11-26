@@ -74,6 +74,7 @@ new #[Title('Property profile')] class extends Component
         $this->moveOutDate = now()->toDateString();
         $this->staffPassExpiresOn = now()->endOfYear()->toDateString();
         $this->stickerYear = now()->year;
+        $this->soaAsOf = now()->toDateString();
     }
 
     #[Computed]
@@ -472,6 +473,9 @@ new #[Title('Property profile')] class extends Component
             </div>
             <div class="flex flex-wrap items-end gap-2">
                 <flux:input type="date" label="Statement as of" wire:model.live="soaAsOf" :max="now()->toDateString()" />
+                @if ($this->ownerStatement['as_of'] !== now()->toDateString())
+                    <flux:button wire:click="$set('soaAsOf', '{{ now()->toDateString() }}')">Today</flux:button>
+                @endif
                 @if (auth()->user()->hasPermission(Permission::StatementsView))
                     <flux:button icon="arrow-down-tray" :href="route('properties.statement-of-account.csv', ['property' => $this->record, 'as_of' => $this->ownerStatement['as_of']])">Excel / Sheets</flux:button>
                     <flux:button variant="primary" icon="arrow-down-tray" :href="route('properties.statement-of-account.print', ['property' => $this->record, 'as_of' => $this->ownerStatement['as_of']])" target="_blank">Export PDF</flux:button>

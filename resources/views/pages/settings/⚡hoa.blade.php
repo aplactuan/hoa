@@ -3,6 +3,7 @@
 use App\Enums\DiscountType;
 use App\Enums\PenaltyType;
 use App\Models\AdvancePaymentPromo;
+use App\Models\DuesStatement;
 use App\Models\MonthlyFeeRate;
 use App\Models\PenaltyAmnesty;
 use App\Models\Setting;
@@ -127,9 +128,13 @@ new #[Title('Association settings')] class extends Component
 
         $this->validate([
             'rateAmount' => ['required', 'numeric', 'min:0', 'max:99999999.99', 'decimal:0,2'],
-            'rateMonth' => ['required', 'date_format:Y-m', 'after_or_equal:'.now()->format('Y-m')],
+            'rateMonth' => ['required', 'date_format:Y-m', function (string $attribute, string $value, Closure $fail): void {
+                if ($value < now()->format('Y-m') && $this->hasStatementsFrom($value)) {
+                    $fail(__('A past month can only get a rate while no statements have been generated for it or any later month. Past statements keep the amount they were billed.'));
+                }
+            }],
             'rateRemarks' => ['nullable', 'string', 'max:255'],
-        ], ['rateMonth.after_or_equal' => __('A new rate can only start this month or later. Past statements keep the amount they were billed.')]);
+        ]);
 
         $effectiveFrom = Carbon::createFromFormat('Y-m', $this->rateMonth)->startOfMonth()->toDateString();
 
@@ -139,6 +144,19 @@ new #[Title('Association settings')] class extends Component
         $this->reset(['rateAmount', 'rateRemarks']);
         unset($this->rates, $this->currentRate);
         Flux::toast(variant: 'success', text: __('Monthly fee rate saved.'));
+    }
+
+    /**
+     * Whether any dues statement has been generated for the given month (Y-m) or a later one.
+     */
+    private function hasStatementsFrom(string $month): bool
+    {
+        [$year, $monthNumber] = array_map('intval', explode('-', $month));
+
+        return DuesStatement::query()->whereHas('billingPeriod', fn ($query) => $query
+            ->where('year', '>', $year)
+            ->orWhere(fn ($query) => $query->where('year', $year)->where('month', '>=', $monthNumber)))
+            ->exists();
     }
 
     public function removeRate(int $rateId): void

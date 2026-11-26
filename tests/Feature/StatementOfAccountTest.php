@@ -360,7 +360,13 @@ test('the property billing tab shows the owner statement of account', function (
         ->test('pages::property-profile', ['property' => $property])
         ->call('showTab', 'Billing')
         ->assertSee('Owner statement of account')
+        ->assertSet('soaAsOf', '2025-02-20')
         ->assertSee('Overdue · 1 mo')
+        ->assertDontSeeHtml('>Today<')
+        ->set('soaAsOf', '2025-01-26')
+        ->assertSee('Due by Feb 10')
+        ->assertSeeHtml('>Today<')
+        ->set('soaAsOf', '2025-02-20')
         ->set('soaTab', 'ledger')
         ->assertSee('Late penalty – Jan 2025 dues (1st month late)');
 });

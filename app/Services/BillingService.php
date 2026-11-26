@@ -18,6 +18,7 @@ use App\Models\Setting;
 use App\Models\StatementAdjustment;
 use App\Support\BillingMath;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
@@ -49,42 +50,13 @@ class BillingService
         );
         $settings = Setting::current();
         $monthlyFee = MonthlyFeeRate::amountFor($year, $month);
-        $dueOn = $this->dueOn($settings, $year, $month);
-        $periodCode = sprintf('%04d%02d', $year, $month);
-        $penaltyRate = $this->penaltyRate($settings);
         $count = 0;
 
         foreach ($this->owners->allGroups() as $propertyIds) {
-            DB::transaction(function () use ($propertyIds, $period, $settings, $monthlyFee, $dueOn, $periodCode, $penaltyRate, $year, $month, $userId, &$count): void {
+            DB::transaction(function () use ($propertyIds, $period, $settings, $monthlyFee, $userId, &$count): void {
                 $properties = Property::query()->whereKey($propertyIds)->orderBy('id')->lockForUpdate()->get();
-                $billingPropertyId = $properties->first()?->id;
-                $enrollment = $this->enrollmentCovering($propertyIds, $year, $month);
-                $created = [];
-
-                foreach ($properties as $property) {
-                    if ($property->statements()->where('billing_period_id', $period->id)->exists()) {
-                        continue;
-                    }
-
-                    $isBillingProperty = $property->id === $billingPropertyId;
-                    $regular = $isBillingProperty ? BillingMath::cents($enrollment?->monthly_fee ?? $monthlyFee) : 0;
-
-                    $created[] = $property->statements()->create([
-                        'code' => $this->codes->next('statement', $periodCode),
-                        'billing_period_id' => $period->id,
-                        'regular' => BillingMath::decimal($regular),
-                        'special' => '0.00',
-                        'penalty' => '0.00',
-                        'penalty_type' => $settings->penalty_type,
-                        'penalty_rate' => $penaltyRate,
-                        'grace_days' => $settings->grace_days,
-                        'previous_balance' => '0.00',
-                        'credits' => '0.00',
-                        'due_on' => $dueOn,
-                        'created_by' => $userId,
-                    ])->id;
-                    $count++;
-                }
+                $created = $this->billGroup($properties, $period, $settings, $monthlyFee, $this->enrollmentsFor($propertyIds), $userId);
+                $count += count($created);
 
                 if ($created !== []) {
                     $this->recalculator->recalculate($properties, 'statement generation', $created);
@@ -96,15 +68,59 @@ class BillingService
     }
 
     /**
+     * Creates the statements an owner group is missing for one billing period, without recalculating the account.
+     *
+     * @param  EloquentCollection<int, Property>  $properties  one owner group, ordered by id so the first is the billing property
+     * @param  EloquentCollection<int, AdvancePaymentEnrollment>  $enrollments  the group's promo enrollments
+     * @return list<int> ids of the statements created
+     */
+    private function billGroup(EloquentCollection $properties, BillingPeriod $period, Setting $settings, string $monthlyFee, EloquentCollection $enrollments, ?int $userId): array
+    {
+        $billingPropertyId = $properties->first()?->id;
+        $enrollment = $this->enrollmentCovering($enrollments, $period->year, $period->month);
+        $billed = DuesStatement::query()->whereIn('property_id', $properties->modelKeys())->where('billing_period_id', $period->id)->pluck('property_id')->all();
+        $created = [];
+
+        foreach ($properties as $property) {
+            if (in_array($property->id, $billed, true)) {
+                continue;
+            }
+
+            $regular = $property->id === $billingPropertyId ? BillingMath::cents($enrollment?->monthly_fee ?? $monthlyFee) : 0;
+
+            $created[] = $property->statements()->create([
+                'code' => $this->codes->next('statement', sprintf('%04d%02d', $period->year, $period->month)),
+                'billing_period_id' => $period->id,
+                'regular' => BillingMath::decimal($regular),
+                'special' => '0.00',
+                'penalty' => '0.00',
+                'penalty_type' => $settings->penalty_type,
+                'penalty_rate' => $this->penaltyRate($settings),
+                'grace_days' => $settings->grace_days,
+                'previous_balance' => '0.00',
+                'credits' => '0.00',
+                'due_on' => $this->dueOn($settings, $period->year, $period->month),
+                'created_by' => $userId,
+            ])->id;
+        }
+
+        return $created;
+    }
+
+    /**
      * Rebuilds every account from the current billing rules, starting at the given month.
      *
      * Bills any month from $from to now that has no statement yet, reprices the statements from $from on with today's
      * monthly fee and penalty rules, charges or reprices each member's one-time membership fee dated from their start of
      * ownership, then recalculates penalties and payment allocations. Running it again with the same rules changes nothing.
      *
+     * Each owner group is rebuilt and committed in its own transaction and recalculated once, so an interrupted run can
+     * simply be started again.
+     *
+     * @param  (Closure(int, int): void)|null  $progress  called with the number of owner groups done and the total
      * @return array{statements_created: int, statements_repriced: int, membership_fees_created: int, membership_fees_updated: int, accounts_recalculated: int}
      */
-    public function rebuildAccounts(CarbonImmutable $from, ?string $monthlyFee = null, ?int $userId = null): array
+    public function rebuildAccounts(CarbonImmutable $from, ?string $monthlyFee = null, ?int $userId = null, ?Closure $progress = null): array
     {
         $from = $from->startOfMonth();
 
@@ -114,36 +130,46 @@ class BillingService
                 ->save();
         }
 
-        $created = 0;
+        /** @var array<string, array{period: BillingPeriod, fee: string}> $periods */
+        $periods = [];
 
         for ($month = $from; $month->lessThanOrEqualTo(now()->startOfMonth()); $month = $month->addMonthNoOverflow()) {
-            $created += $this->generatePeriod($month->year, $month->month, $userId);
+            $periods[$month->year.'-'.$month->month] = [
+                'period' => BillingPeriod::query()->firstOrCreate(['year' => $month->year, 'month' => $month->month], ['generated_at' => now(), 'generated_by' => $userId]),
+                'fee' => MonthlyFeeRate::amountFor($month->year, $month->month),
+            ];
         }
 
         $settings = Setting::current();
-        $repriced = 0;
-        $membership = ['created' => 0, 'updated' => 0];
+        $groups = $this->owners->allGroups();
+        $totals = ['statements_created' => 0, 'statements_repriced' => 0, 'membership_fees_created' => 0, 'membership_fees_updated' => 0, 'accounts_recalculated' => 0];
+        $progress?->__invoke(0, count($groups));
 
-        foreach ($this->owners->allGroups() as $propertyIds) {
-            DB::transaction(function () use ($propertyIds, $from, $settings, $userId, &$repriced, &$membership): void {
+        foreach ($groups as $propertyIds) {
+            DB::transaction(function () use ($propertyIds, $periods, $from, $settings, $userId, &$totals): void {
                 $properties = Property::query()->whereKey($propertyIds)->orderBy('id')->lockForUpdate()->get();
-                $repriced += $this->repriceStatements($properties, $from, $settings);
+                $enrollments = $this->enrollmentsFor($propertyIds);
 
-                $result = $this->rebuildMembershipFee($properties, $settings, $userId);
-
-                if ($result !== null) {
-                    $membership[$result]++;
+                foreach ($periods as $billing) {
+                    $totals['statements_created'] += count($this->billGroup($properties, $billing['period'], $settings, $billing['fee'], $enrollments, $userId));
                 }
+
+                $totals['statements_repriced'] += $this->repriceStatements($properties, $from, $settings, $enrollments, array_map(fn (array $billing): string => $billing['fee'], $periods));
+
+                $membership = $this->rebuildMembershipFee($properties, $settings, $userId);
+
+                if ($membership !== null) {
+                    $totals['membership_fees_'.$membership]++;
+                }
+
+                $this->recalculator->recalculate($properties, 'account rebuild', [], false);
+                $totals['accounts_recalculated']++;
             });
+
+            $progress?->__invoke($totals['accounts_recalculated'], count($groups));
         }
 
-        return [
-            'statements_created' => $created,
-            'statements_repriced' => $repriced,
-            'membership_fees_created' => $membership['created'],
-            'membership_fees_updated' => $membership['updated'],
-            'accounts_recalculated' => $this->recalculateAll(),
-        ];
+        return $totals;
     }
 
     /** @param array{amount: string, method: string, paid_on: string, reference_no?: string|null, remarks?: string|null} $attributes */
@@ -313,14 +339,13 @@ class BillingService
     }
 
     /**
-     * @param  list<int>  $propertyIds
-     */
-    /**
      * Applies the current monthly fee and penalty rules to an owner group's statements from the given month on.
      *
      * @param  EloquentCollection<int, Property>  $properties  one owner group, ordered by id so the first is the billing property
+     * @param  EloquentCollection<int, AdvancePaymentEnrollment>  $enrollments  the group's promo enrollments
+     * @param  array<string, string>  $monthlyFees  monthly fee keyed by "year-month", looked up when missing
      */
-    private function repriceStatements(EloquentCollection $properties, CarbonImmutable $from, Setting $settings): int
+    private function repriceStatements(EloquentCollection $properties, CarbonImmutable $from, Setting $settings, EloquentCollection $enrollments, array $monthlyFees): int
     {
         $billingPropertyId = $properties->first()?->id;
         $statements = DuesStatement::query()
@@ -336,7 +361,7 @@ class BillingService
             $year = $statement->billingPeriod->year;
             $month = $statement->billingPeriod->month;
             $regular = $statement->property_id === $billingPropertyId
-                ? BillingMath::cents($this->enrollmentCovering($properties->modelKeys(), $year, $month)?->monthly_fee ?? MonthlyFeeRate::amountFor($year, $month))
+                ? BillingMath::cents($this->enrollmentCovering($enrollments, $year, $month)?->monthly_fee ?? $monthlyFees[$year.'-'.$month] ?? MonthlyFeeRate::amountFor($year, $month))
                 : 0;
 
             $statement->fill([
@@ -431,13 +456,26 @@ class BillingService
         return (string) ($settings->penalty_type === PenaltyType::Fixed ? $settings->penalty_fixed_amount : $settings->penalty_percent);
     }
 
-    private function enrollmentCovering(array $propertyIds, int $year, int $month): ?AdvancePaymentEnrollment
+    /**
+     * The promo enrollments of an owner group whose qualifying payment still stands.
+     *
+     * @param  list<int>  $propertyIds
+     * @return EloquentCollection<int, AdvancePaymentEnrollment>
+     */
+    private function enrollmentsFor(array $propertyIds): EloquentCollection
     {
         return AdvancePaymentEnrollment::query()
             ->with('promo')
             ->whereIn('property_id', $propertyIds)
             ->whereHas('payment', fn (Builder $query) => $query->where('status', '!=', 'Voided'))
-            ->get()
-            ->first(fn (AdvancePaymentEnrollment $enrollment): bool => $enrollment->promo->covers($year, $month));
+            ->get();
+    }
+
+    /**
+     * @param  EloquentCollection<int, AdvancePaymentEnrollment>  $enrollments
+     */
+    private function enrollmentCovering(EloquentCollection $enrollments, int $year, int $month): ?AdvancePaymentEnrollment
+    {
+        return $enrollments->first(fn (AdvancePaymentEnrollment $enrollment): bool => $enrollment->promo->covers($year, $month));
     }
 }

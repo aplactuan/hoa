@@ -12,7 +12,6 @@ use Illuminate\Console\Command;
 use Illuminate\Console\ConfirmableTrait;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use Throwable;
 
 #[Signature('billing:rebuild-accounts
     {--from=2025-01 : The first month (YYYY-MM) to bill and reprice}
@@ -52,17 +51,27 @@ class RebuildAccounts extends Command
             $this->warn('The membership fee is ₱0.00, so no membership fees will be charged or repriced.');
         }
 
-        DB::beginTransaction();
+        $this->info("Rebuilding owner accounts from {$from->format('M Y')}".($dryRun ? ' (dry run)' : '').'...');
+        $bar = $this->output->createProgressBar();
+        $rebuild = fn (): array => $billing->rebuildAccounts($from, $monthlyFee === null ? null : (string) $monthlyFee, progress: function (int $done, int $total) use ($bar): void {
+            $bar->setMaxSteps($total);
+            $bar->setProgress($done);
+        });
 
-        try {
-            $summary = $billing->rebuildAccounts($from, $monthlyFee === null ? null : (string) $monthlyFee);
-        } catch (Throwable $exception) {
-            DB::rollBack();
+        if ($dryRun) {
+            DB::beginTransaction();
 
-            throw $exception;
+            try {
+                $summary = $rebuild();
+            } finally {
+                DB::rollBack();
+            }
+        } else {
+            $summary = $rebuild();
         }
 
-        $dryRun ? DB::rollBack() : DB::commit();
+        $bar->finish();
+        $this->newLine(2);
 
         $this->table(['', $dryRun ? 'Would change' : 'Changed'], [
             ['Statements created', $summary['statements_created']],

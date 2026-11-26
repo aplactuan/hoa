@@ -40,4 +40,5 @@ Good to know:
 - Each statement keeps the rules from when it was generated. Changing Settings alone won't reprice past months; run this command after any rule change.
 - Running it again with unchanged rules changes nothing, so it's safe to re-run.
 - `--dry-run` does all the work and then rolls it back, so the counts it shows are real.
+- A real run saves each owner's account as soon as it's rebuilt and shows a progress bar. If it's interrupted, just run it again; it picks up where it left off.
 - Until the rebuild runs, the monthly statement run (1st of each month) and the nightly penalty update use the current settings. To keep owners from seeing interim penalties, add a **Penalty amnesty** in Settings.
